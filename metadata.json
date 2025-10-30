@@ -1,0 +1,5 @@
+{
+  "name": "Talent Sonar Job+Candidate More Details",
+  "description": "An AI-powered application to proactively discover and match talent. This tool allows recruiters to upload job descriptions and candidate CVs, then uses AI to analyze profiles, determine match scores, identify skill gaps, and generate outreach messages.",
+  "requestFramePermissions": []
+}

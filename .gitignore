@@ -1,0 +1,24 @@
+# Dependencies
+node_modules
+/.pnp
+.pnp.js
+
+# Production
+/build
+/dist
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+
+# Editor
+.vscode
+.idea
+.DS_Store
+
+# Vercel
+.vercel
