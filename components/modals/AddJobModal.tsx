@@ -143,7 +143,7 @@ Must know TypeScript, React, and Node.js.
 Nice to have: AWS, Docker, GraphQL.
 You'll be building our core product features and mentoring junior developers..."
                   rows={15}
-                  className="w-full p-3 rounded-md bg-slate-700 border border-slate-600 focus:ring-2 focus:ring-sky-500 outline-none resize-y custom-scrollbar text-sm"
+                  className="w-full p-3 rounded-md bg-slate-700 border border-slate-600 text-white placeholder:text-slate-400 focus:ring-2 focus:ring-sky-500 outline-none resize-y custom-scrollbar text-sm"
                 />
               </div>
 
@@ -180,7 +180,7 @@ You'll be building our core product features and mentoring junior developers..."
                   type="text"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  className="w-full p-2 rounded-md bg-slate-700 border border-slate-600 focus:ring-2 focus:ring-sky-500 outline-none"
+                  className="w-full p-2 rounded-md bg-slate-700 border border-slate-600 text-white placeholder:text-slate-400 focus:ring-2 focus:ring-sky-500 outline-none"
                 />
               </div>
 
@@ -195,7 +195,7 @@ You'll be building our core product features and mentoring junior developers..."
                     type="text"
                     value={department}
                     onChange={(e) => setDepartment(e.target.value)}
-                    className="w-full p-2 rounded-md bg-slate-700 border border-slate-600 focus:ring-2 focus:ring-sky-500 outline-none"
+                    className="w-full p-2 rounded-md bg-slate-700 border border-slate-600 text-white placeholder:text-slate-400 focus:ring-2 focus:ring-sky-500 outline-none"
                   />
                 </div>
                 <div>
@@ -207,7 +207,7 @@ You'll be building our core product features and mentoring junior developers..."
                     type="text"
                     value={location}
                     onChange={(e) => setLocation(e.target.value)}
-                    className="w-full p-2 rounded-md bg-slate-700 border border-slate-600 focus:ring-2 focus:ring-sky-500 outline-none"
+                    className="w-full p-2 rounded-md bg-slate-700 border border-slate-600 text-white placeholder:text-slate-400 focus:ring-2 focus:ring-sky-500 outline-none"
                   />
                 </div>
                 <div>
@@ -219,7 +219,7 @@ You'll be building our core product features and mentoring junior developers..."
                     type="text"
                     value={experienceLevel}
                     onChange={(e) => setExperienceLevel(e.target.value)}
-                    className="w-full p-2 rounded-md bg-slate-700 border border-slate-600 focus:ring-2 focus:ring-sky-500 outline-none"
+                    className="w-full p-2 rounded-md bg-slate-700 border border-slate-600 text-white placeholder:text-slate-400 focus:ring-2 focus:ring-sky-500 outline-none"
                   />
                 </div>
               </div>
@@ -256,7 +256,7 @@ You'll be building our core product features and mentoring junior developers..."
                         (e.target as HTMLInputElement).value = '';
                       }
                     }}
-                    className="flex-grow p-2 rounded-md bg-slate-700 border border-slate-600 focus:ring-2 focus:ring-sky-500 outline-none text-sm"
+                    className="flex-grow p-2 rounded-md bg-slate-700 border border-slate-600 text-white placeholder:text-slate-400 focus:ring-2 focus:ring-sky-500 outline-none text-sm"
                   />
                 </div>
               </div>
@@ -293,7 +293,7 @@ You'll be building our core product features and mentoring junior developers..."
                         (e.target as HTMLInputElement).value = '';
                       }
                     }}
-                    className="flex-grow p-2 rounded-md bg-slate-700 border border-slate-600 focus:ring-2 focus:ring-sky-500 outline-none text-sm"
+                    className="flex-grow p-2 rounded-md bg-slate-700 border border-slate-600 text-white placeholder:text-slate-400 focus:ring-2 focus:ring-sky-500 outline-none text-sm"
                   />
                 </div>
               </div>
@@ -308,7 +308,7 @@ You'll be building our core product features and mentoring junior developers..."
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   rows={6}
-                  className="w-full p-2 rounded-md bg-slate-700 border border-slate-600 focus:ring-2 focus:ring-sky-500 outline-none resize-y custom-scrollbar text-sm"
+                  className="w-full p-2 rounded-md bg-slate-700 border border-slate-600 text-white placeholder:text-slate-400 focus:ring-2 focus:ring-sky-500 outline-none resize-y custom-scrollbar text-sm"
                 />
               </div>
 

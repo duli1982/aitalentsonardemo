@@ -9,7 +9,12 @@
       "Bash(dir:*)",
       "Bash(git init:*)",
       "Bash(git remote add:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nInitial commit: AI Talent Sonar Demo application\n\n- Full-stack talent matching application with AI integration\n- Added 20 Randstad-specific candidate profiles for recruiting roles\n- Includes sourcing recruiters, coordinators, admin roles, and team leads\n- Integrated Google Gemini AI for candidate analysis\n- Features job matching, candidate pipeline, and insights dashboard\n\nGenerated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git branch:*)",
+      "Bash(git push:*)",
+      "Bash(git rm:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []

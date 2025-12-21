@@ -1,20 +1,30 @@
 import React from 'react';
 import type { Candidate, Job, InternalCandidate, PastCandidate, UploadedCandidate } from '../../types';
-import { X, User, Mail, Briefcase, Star, Target, FileText, Calendar, Building2, TrendingUp, Award } from 'lucide-react';
+import { X, User, Mail, Briefcase, Star, Target, FileText, Calendar, Building2, TrendingUp, Award, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface CandidateProfileModalProps {
+  isOpen: boolean;
   candidate: Candidate;
-  job: Job;
+  jobs: Job[];
+  jobContext?: Job;
   onClose: () => void;
+  onInitiateAnalysis: (type: any, candidate: Candidate, job?: Job) => void;
+  onUpdateCandidate: (candidateId: string, data: Partial<Candidate>) => void;
 }
 
 const CandidateProfileModal: React.FC<CandidateProfileModalProps> = ({
+  isOpen,
   candidate,
-  job,
-  onClose
+  jobs,
+  jobContext,
+  onClose,
+  onInitiateAnalysis,
+  onUpdateCandidate
 }) => {
-  const matchScore = candidate.matchScores?.[job.id];
-  const matchRationale = candidate.matchRationales?.[job.id];
+  if (!isOpen) return null;
+
+  const [showAllJobs, setShowAllJobs] = React.useState(false);
+  const [showUnscoredJobs, setShowUnscoredJobs] = React.useState(false);
 
   const getCandidateTypeLabel = () => {
     switch (candidate.type) {
@@ -60,6 +70,27 @@ const CandidateProfileModal: React.FC<CandidateProfileModalProps> = ({
 
   const details = getCandidateDetails();
 
+  const primaryJob = jobContext || jobs[0];
+  const primaryScore = primaryJob ? candidate.matchScores?.[primaryJob.id] : undefined;
+  const primaryRationale = primaryJob ? candidate.matchRationales?.[primaryJob.id] : undefined;
+
+  const scoredJobs = jobs
+    .map((job) => ({ job, score: candidate.matchScores?.[job.id], rationale: candidate.matchRationales?.[job.id] }))
+    .filter((j) => typeof j.score === 'number')
+    .sort((a, b) => (b.score as number) - (a.score as number));
+
+  const matchedSkillsForPrimary =
+    primaryJob && Array.isArray(candidate.skills)
+      ? candidate.skills.filter((s) =>
+          (primaryJob.requiredSkills || []).some((req) => req.toLowerCase() === s.toLowerCase())
+        )
+      : [];
+
+  const otherSkillsPreview =
+    primaryJob && Array.isArray(candidate.skills)
+      ? candidate.skills.filter((s) => !matchedSkillsForPrimary.includes(s)).slice(0, 6)
+      : [];
+
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[100]" onClick={onClose}>
       <div
@@ -90,27 +121,138 @@ const CandidateProfileModal: React.FC<CandidateProfileModalProps> = ({
 
         {/* Content */}
         <div className="flex-grow overflow-y-auto custom-scrollbar p-6 space-y-6">
-          {/* Match Score Section */}
-          <div className="bg-gradient-to-br from-purple-900/30 to-sky-900/30 border border-purple-500/30 rounded-xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-sky-300 flex items-center">
-                <Target className="h-5 w-5 mr-2" />
-                Match for: {job.title}
-              </h3>
-              <div className="text-right">
-                <div className={`text-4xl font-bold ${matchScore && matchScore > 75 ? 'text-green-400' : matchScore && matchScore > 50 ? 'text-yellow-400' : 'text-red-400'}`}>
-                  {typeof matchScore === 'number' ? `${matchScore}%` : 'N/A'}
+          {/* Primary Job Match */}
+          {primaryJob ? (
+            <div className="bg-slate-700/30 border border-slate-600/30 rounded-xl p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <h3 className="text-lg font-semibold text-sky-300 flex items-center">
+                    <Target className="h-5 w-5 mr-2" />
+                    Match for: <span className="ml-2 text-white truncate">{primaryJob.title}</span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1 truncate">
+                    {primaryJob.department} • {primaryJob.location}
+                  </p>
                 </div>
-                <p className="text-xs text-gray-400">Match Score</p>
+                <div className="text-right flex-shrink-0">
+                  <div className={`text-3xl font-extrabold ${typeof primaryScore === 'number' && primaryScore >= 75 ? 'text-emerald-400' : typeof primaryScore === 'number' && primaryScore >= 50 ? 'text-amber-400' : 'text-red-400'}`}>
+                    {typeof primaryScore === 'number' ? `${primaryScore}%` : '—'}
+                  </div>
+                  <div className="text-[10px] uppercase tracking-wide text-slate-400">
+                    {typeof primaryScore === 'number' ? 'Match Score' : 'Not Scored'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div className="lg:col-span-2 bg-slate-800/40 border border-slate-700/50 rounded-lg p-4">
+                  <div className="text-xs font-semibold text-slate-300 mb-2">Summary</div>
+                  <p className="text-sm text-gray-300 leading-relaxed">
+                    {primaryRationale || 'No analysis summary available yet for this job.'}
+                  </p>
+                  <div className="mt-3 flex items-center gap-2">
+                    <button
+                      onClick={() => onInitiateAnalysis('FIT_ANALYSIS', candidate, primaryJob)}
+                      className="text-xs bg-sky-600 hover:bg-sky-700 text-white px-3 py-1.5 rounded-md transition-colors"
+                    >
+                      Run Detailed Analysis
+                    </button>
+                    <button
+                      onClick={() => setShowAllJobs((v) => !v)}
+                      className="text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-1.5 rounded-md transition-colors inline-flex items-center gap-1"
+                    >
+                      {showAllJobs ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                      {showAllJobs ? 'Hide other jobs' : 'Show other jobs'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-slate-800/40 border border-slate-700/50 rounded-lg p-4">
+                  <div className="text-xs font-semibold text-slate-300 mb-2">Skill Alignment</div>
+                  {matchedSkillsForPrimary.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {matchedSkillsForPrimary.slice(0, 10).map((skill) => (
+                        <span key={skill} className="px-2 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-200 border border-emerald-500/20">
+                          {skill}
+                        </span>
+                      ))}
+                      {matchedSkillsForPrimary.length > 10 && (
+                        <span className="px-2 py-1 rounded-full text-xs bg-slate-700 text-slate-200 border border-slate-600">
+                          +{matchedSkillsForPrimary.length - 10} more
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400">No required-skill overlap detected.</p>
+                  )}
+
+                  {otherSkillsPreview.length > 0 && (
+                    <p className="text-[10px] text-slate-500 mt-3">
+                      Other skills: {otherSkillsPreview.join(', ')}…
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
-            <div className="bg-slate-800/50 rounded-lg p-4">
-              <h4 className="text-sm font-semibold text-sky-400 mb-2">Why this score?</h4>
-              <p className="text-sm text-gray-300 italic">
-                {matchRationale || 'No detailed analysis available yet. Run AI Fit Analysis for comprehensive insights.'}
-              </p>
+          ) : (
+            <div className="bg-slate-700/30 border border-slate-600/30 rounded-xl p-6">
+              <p className="text-gray-400 italic">No active jobs to match against.</p>
             </div>
-          </div>
+          )}
+
+          {/* Other Jobs */}
+          {showAllJobs && jobs.length > 0 && (
+            <div className="bg-slate-700/30 border border-slate-600/30 rounded-xl p-6">
+              <div className="flex items-center justify-between gap-4 mb-4">
+                <h3 className="text-sm font-semibold text-sky-300 flex items-center">
+                  <Briefcase className="h-4 w-4 mr-2" />
+                  Other Job Matches
+                </h3>
+                <label className="flex items-center gap-2 text-xs text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={showUnscoredJobs}
+                    onChange={(e) => setShowUnscoredJobs(e.target.checked)}
+                    className="h-4 w-4 rounded bg-slate-800 border-slate-600"
+                  />
+                  Show unscored jobs
+                </label>
+              </div>
+
+              <div className="space-y-2">
+                {(showUnscoredJobs
+                  ? jobs.map((job) => ({ job, score: candidate.matchScores?.[job.id], rationale: candidate.matchRationales?.[job.id] }))
+                  : scoredJobs
+                )
+                  .filter((row) => !primaryJob || row.job.id !== primaryJob.id)
+                  .slice(0, 12)
+                  .map(({ job, score, rationale }) => (
+                    <div key={job.id} className="flex items-start justify-between gap-3 bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-gray-200 truncate">{job.title}</div>
+                        <div className="text-[11px] text-slate-400 truncate">{job.department}</div>
+                        {rationale && <div className="text-xs text-slate-400 mt-2 line-clamp-2">{rationale}</div>}
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <div className={`text-lg font-bold ${typeof score === 'number' && score >= 75 ? 'text-emerald-400' : typeof score === 'number' && score >= 50 ? 'text-amber-400' : 'text-red-400'}`}>
+                          {typeof score === 'number' ? `${score}%` : 'N/A'}
+                        </div>
+                        <button
+                          onClick={() => onInitiateAnalysis('FIT_ANALYSIS', candidate, job)}
+                          className="mt-2 text-[11px] bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded-md transition-colors"
+                        >
+                          Run Analysis
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+
+              {!showUnscoredJobs && scoredJobs.length === 0 && (
+                <p className="text-sm text-slate-400">No scored jobs for this candidate yet.</p>
+              )}
+            </div>
+          )}
 
           {/* Contact & Basic Info */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -204,17 +346,16 @@ const CandidateProfileModal: React.FC<CandidateProfileModalProps> = ({
             </h3>
             <div className="flex flex-wrap gap-2">
               {candidate.skills.map(skill => {
-                const isJobRequirement = job.requiredSkills.some(
-                  reqSkill => reqSkill.toLowerCase() === skill.toLowerCase()
+                const isJobRequirement = jobs.some(job =>
+                  job.requiredSkills.some(reqSkill => reqSkill.toLowerCase() === skill.toLowerCase())
                 );
                 return (
                   <span
                     key={skill}
-                    className={`px-3 py-1 rounded-full text-sm font-medium ${
-                      isJobRequirement
+                    className={`px-3 py-1 rounded-full text-sm font-medium ${isJobRequirement
                         ? 'bg-green-500/20 text-green-300 ring-1 ring-green-500/50'
                         : 'bg-slate-600/50 text-gray-300'
-                    }`}
+                      }`}
                   >
                     {skill}
                     {isJobRequirement && ' ✓'}
@@ -223,7 +364,7 @@ const CandidateProfileModal: React.FC<CandidateProfileModalProps> = ({
               })}
             </div>
             <p className="text-xs text-gray-500 mt-3">
-              ✓ indicates skills matching the job requirements
+              ✓ indicates skills matching requirements in one or more active jobs
             </p>
           </div>
 

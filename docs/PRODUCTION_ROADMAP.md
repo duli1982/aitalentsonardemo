@@ -66,7 +66,7 @@ This document outlines the complete journey from the current proof-of-concept to
 
 **Tasks:**
 - [ ] Provision PostgreSQL instance (AWS RDS/Supabase)
-- [ ] Run DATABASE_SCHEMA.sql
+- [ ] Run `sql/DATABASE_SCHEMA.sql`
 - [ ] Set up Redis instance (AWS ElastiCache)
 - [ ] Create database backups strategy
 - [ ] Set up pgAdmin/DBeaver for management

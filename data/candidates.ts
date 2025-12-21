@@ -6,11 +6,11 @@ export const ALL_CANDIDATES: Candidate[] = [
     id: 'i1', type: 'internal', name: 'Alice Wonderland', currentRole: 'Software Engineer II', department: 'Technology', skills: ['React', 'JavaScript', 'Java', 'Problem Solving', 'CSS'], experienceYears: 3, performanceRating: 4, careerAspirations: 'Lead a development team, explore AI applications.', developmentGoals: "Improve TypeScript skills, learn about cloud deployment.", learningAgility: 4, email: 'alice.w@example.com', isHiddenGem: false, profileStatus: 'partial', linkedInProfileUrl: 'https://linkedin.com/in/alicewonder'
   },
   {
-    id: 'i2', type: 'internal', name: 'Bob The Builder', currentRole: 'Junior Project Manager', department: 'Operations', skills: ['Project Coordination', 'Agile Methodologies', 'Communication', 'MS Project', 'Risk Management', 'Stakeholder Engagement'], experienceYears: 2, performanceRating: 5, careerAspirations: 'Move into a technical product owner role, interested in software development processes.', developmentGoals: "Understand basics of software architecture.", learningAgility: 5, email: 'bob.b@example.com', isHiddenGem: true, profileStatus: 'complete'
+    id: 'i2', type: 'internal', name: 'Bob The Builder', currentRole: 'Junior Project Manager', department: 'Operations', skills: ['Project Coordination', 'Agile Methodologies', 'Communication', 'MS Project', 'Risk Management', 'Stakeholder Engagement', 'Pharma Industry Knowledge'], experienceYears: 2, performanceRating: 5, careerAspirations: 'Move into a technical product owner role, interested in software development processes.', developmentGoals: "Understand basics of software architecture.", learningAgility: 5, email: 'bob.b@example.com', isHiddenGem: true, profileStatus: 'complete'
   },
   { id: 'i3', type: 'internal', name: 'Katalin Varga', currentRole: 'Data Analyst', department: 'Business Intelligence', skills: ['SQL', 'Tableau', 'Python', 'Pandas', 'Data Visualization'], experienceYears: 4, performanceRating: 5, careerAspirations: 'Transition to a Data Scientist role, focusing on predictive modeling.', developmentGoals: 'Learn Scikit-learn and TensorFlow.', learningAgility: 5, email: 'katalin.varga@example.com', isHiddenGem: false, profileStatus: 'complete' },
   { id: 'i4', type: 'internal', name: 'László Nagy', currentRole: 'Marketing Specialist', department: 'Marketing', skills: ['SEO', 'Google Analytics', 'Content Creation', 'Email Marketing'], experienceYears: 3, performanceRating: 4, careerAspirations: 'Specialize in marketing automation and lead generation.', developmentGoals: 'Get certified in HubSpot and Marketo.', learningAgility: 4, email: 'laszlo.nagy@example.com', isHiddenGem: false, profileStatus: 'complete' },
-  { id: 'i5', type: 'internal', name: 'Eszter Kovács', currentRole: 'HR Generalist', department: 'Human Resources', skills: ['Onboarding', 'Employee Relations', 'HRIS', 'Recruiting Support'], experienceYears: 2, performanceRating: 4, careerAspirations: 'Become an HR Business Partner.', developmentGoals: 'Gain more experience in compensation and benefits.', learningAgility: 3, email: 'eszter.kovacs@example.com', isHiddenGem: false, profileStatus: 'complete' },
+  { id: 'i5', type: 'internal', name: 'Eszter Kovács', currentRole: 'HR Generalist', department: 'Human Resources', skills: ['Onboarding', 'Employee Relations', 'HRIS', 'Recruiting Support', 'German'], experienceYears: 2, performanceRating: 4, careerAspirations: 'Become an HR Business Partner.', developmentGoals: 'Gain more experience in compensation and benefits.', learningAgility: 3, email: 'eszter.kovacs@example.com', isHiddenGem: false, profileStatus: 'complete' },
   { id: 'i6', type: 'internal', name: 'Gábor Kiss', currentRole: 'Senior QA Engineer', department: 'Technology', skills: ['Selenium', 'Cypress', 'Jira', 'Test Automation', 'API Testing'], experienceYears: 7, performanceRating: 5, careerAspirations: 'Move into a QA Lead or management role.', developmentGoals: 'Improve performance testing skills with JMeter.', learningAgility: 4, email: 'gabor.kiss@example.com', isHiddenGem: false, profileStatus: 'complete' },
   { id: 'i7', type: 'internal', name: 'Judit Szabó', currentRole: 'UI/UX Designer', department: 'Product', skills: ['Figma', 'Sketch', 'User Research', 'Prototyping', 'Wireframing'], experienceYears: 5, performanceRating: 4, careerAspirations: 'Lead design for a major product line.', developmentGoals: 'Incorporate more data-driven design principles.', learningAgility: 4, email: 'judit.szabo@example.com', isHiddenGem: false, profileStatus: 'complete' },
   { id: 'i8', type: 'internal', name: 'András Molnár', currentRole: 'DevOps Engineer', department: 'Technology', skills: ['AWS', 'Docker', 'Kubernetes', 'Terraform', 'CI/CD'], experienceYears: 4, performanceRating: 5, careerAspirations: 'Become a cloud architect.', developmentGoals: 'Achieve AWS Solutions Architect certification.', learningAgility: 5, email: 'andras.molnar@example.com', isHiddenGem: false, profileStatus: 'complete' },
@@ -18,7 +18,7 @@ export const ALL_CANDIDATES: Candidate[] = [
   { id: 'i10', type: 'internal', name: 'Péter Tóth', currentRole: 'Junior Backend Developer', department: 'Technology', skills: ['Node.js', 'Express', 'MongoDB', 'REST APIs'], experienceYears: 1, performanceRating: 4, careerAspirations: 'Become a full-stack developer.', developmentGoals: 'Learn React and TypeScript.', learningAgility: 5, email: 'peter.toth@example.com', isHiddenGem: false, profileStatus: 'complete' },
   { id: 'i11', type: 'internal', name: 'Mária Fekete', currentRole: 'Office Manager', department: 'Administration', skills: ['Vendor Management', 'Event Planning', 'Office Administration', 'Budgeting'], experienceYears: 8, performanceRating: 5, careerAspirations: 'Transition into a project management or executive assistant role.', developmentGoals: 'Get a certification in project management (PMP).', learningAgility: 4, email: 'maria.fekete@example.com', isHiddenGem: true, profileStatus: 'complete' },
   { id: 'i12', type: 'internal', name: 'István Balogh', currentRole: 'IT Support Specialist', department: 'IT', skills: ['Active Directory', 'Hardware Troubleshooting', 'Networking', 'Customer Service'], experienceYears: 3, performanceRating: 4, careerAspirations: 'Move into a cybersecurity analyst role.', developmentGoals: 'Study for CompTIA Security+ certification.', learningAgility: 5, email: 'istvan.balogh@example.com', isHiddenGem: true, profileStatus: 'partial' },
-  { id: 'i13', type: 'internal', name: 'Viktória Simon', currentRole: 'Sales Development Representative', department: 'Sales', skills: ['Lead Generation', 'Salesforce', 'Cold Calling', 'Communication'], experienceYears: 1, performanceRating: 5, careerAspirations: 'Grow into an Account Executive role.', developmentGoals: 'Improve negotiation and closing skills.', learningAgility: 5, email: 'viktoria.simon@example.com', isHiddenGem: false, profileStatus: 'complete' },
+  { id: 'i13', type: 'internal', name: 'Viktória Simon', currentRole: 'Sales Development Representative', department: 'Sales', skills: ['Lead Generation', 'Salesforce', 'Cold Calling', 'Communication', 'French'], experienceYears: 1, performanceRating: 5, careerAspirations: 'Grow into an Account Executive role.', developmentGoals: 'Improve negotiation and closing skills.', learningAgility: 5, email: 'viktoria.simon@example.com', isHiddenGem: false, profileStatus: 'complete' },
   { id: 'i14', type: 'internal', name: 'János Takács', currentRole: 'Content Writer', department: 'Marketing', skills: ['Copywriting', 'SEO', 'WordPress', 'Storytelling'], experienceYears: 4, performanceRating: 4, careerAspirations: 'Become a Content Strategist.', developmentGoals: 'Learn more about video content creation and editing.', learningAgility: 4, email: 'janos.takacs@example.com', isHiddenGem: false, profileStatus: 'complete' },
   { id: 'i15', type: 'internal', name: 'Ágnes Németh', currentRole: 'Product Manager', department: 'Product', skills: ['Product Roadmapping', 'Agile', 'User Stories', 'Jira', 'Market Research'], experienceYears: 6, performanceRating: 5, careerAspirations: 'Become a Group Product Manager.', developmentGoals: 'Deepen understanding of data analysis for product decisions.', learningAgility: 4, email: 'agnes.nemeth@example.com', isHiddenGem: false, profileStatus: 'complete' },
 
@@ -65,4 +65,91 @@ export const ALL_CANDIDATES: Candidate[] = [
   { id: 'upl-18', type: 'uploaded', name: 'Patrik Szekeres', skills: ['JavaScript', 'TypeScript', 'Angular', 'RxJS', 'NgRx'], experienceYears: 7, summary: 'Senior Frontend Engineer specializing in building complex, large-scale applications with Angular and TypeScript.', fileName: 'Patrik_Szekeres_CV.pdf', email: 'p.szekeres@example.com', profileStatus: 'complete' },
   { id: 'upl-19', type: 'uploaded', name: 'Noémi Budai', skills: ['Learning & Development', 'Instructional Design', 'LMS', 'Training Delivery'], experienceYears: 9, summary: 'Learning and Development Manager focused on creating impactful training programs that foster employee growth and drive organizational performance.', fileName: 'Noemi_Budai_LD.docx', email: 'noemi.budai@example.com', profileStatus: 'complete' },
   { id: 'upl-20', type: 'uploaded', name: 'Zsigmond Bognár', skills: ['PHP', 'Laravel', 'MySQL', 'Vue.js', 'API Development'], experienceYears: 10, summary: 'A highly experienced Full-Stack Developer with a decade of expertise in building robust web applications using the Laravel and Vue.js stack.', fileName: 'Bognar_Zsigmond_Fullstack.pdf', email: 'zs.bognar@example.com', profileStatus: 'complete' },
+  // --- MERCK KGaA / RANDSTAD GBS ADDITIONS ---
+  { id: 'upl-21', type: 'uploaded', name: 'Dr. Elena Rossi', skills: ['Bioinformatics', 'Python', 'R', 'Genomics', 'NGS Analysis', 'Biostatistics'], experienceYears: 6, summary: 'PhD in Bioinformatics with strong expertise in analyzing Next-Generation Sequencing data for oncology research.', fileName: 'Elena_Rossi_Bioinfo.pdf', email: 'elena.rossi@example.com', profileStatus: 'complete' },
+  { id: 'upl-22', type: 'uploaded', name: 'Markus Weber', skills: ['Supply Chain Management', 'SAP IBP', 'Logistics', 'Inventory Optimization', 'German'], experienceYears: 8, summary: 'Supply Chain Analyst with a focus on pharmaceutical logistics and SAP Integrated Business Planning implementation.', fileName: 'Weber_Markus_SCM.pdf', email: 'markus.weber@example.com', profileStatus: 'complete' },
+  { id: 'upl-23', type: 'uploaded', name: 'Sarah Jenkins', skills: ['Regulatory Affairs', 'FDA Regulations', 'EMA Guidelines', 'GMP', 'Medical Devices'], experienceYears: 5, summary: 'Regulatory Affairs Specialist experienced in preparing submissions for FDA and EMA approval for medical devices.', fileName: 'Sarah_Jenkins_RA.docx', email: 'sarah.jenkins@example.com', profileStatus: 'complete' },
+  { id: 'upl-24', type: 'uploaded', name: 'Raj Patel', skills: ['SAP FICO', 'S/4HANA', 'Financial Accounting', 'Business Process Improvement'], experienceYears: 10, summary: 'Senior SAP FICO Consultant with multiple full-lifecycle S/4HANA implementations in the manufacturing sector.', fileName: 'Raj_Patel_SAP.pdf', email: 'raj.patel@example.com', profileStatus: 'complete' },
+  { id: 'upl-25', type: 'uploaded', name: 'Sophie Dubois', skills: ['Customer Service', 'French', 'English', 'SAP CRM', 'Order Management'], experienceYears: 4, summary: 'Multilingual Customer Support Specialist with experience in a shared services environment supporting French-speaking markets.', fileName: 'Sophie_Dubois_CS.pdf', email: 'sophie.dubois@example.com', profileStatus: 'complete' },
+
+  // --- REGULATORY & SAFETY MANAGER CANDIDATES (Belgium) ---
+  // Internal Candidates
+  {
+    id: 'i16',
+    type: 'internal',
+    name: 'Dr. Koen Vandenberg',
+    currentRole: 'Senior Regulatory Affairs Associate',
+    department: 'Regulatory Affairs',
+    skills: ['Regulatory Affairs', 'EU GVP', 'Pharmacovigilance', 'Dutch', 'English', 'Medical Affairs', 'Regulatory Submissions'],
+    experienceYears: 5,
+    performanceRating: 5,
+    careerAspirations: 'Lead regulatory strategy for a regional market and take on broader pharmacovigilance responsibilities.',
+    developmentGoals: 'Obtain RIP (Responsible Person for Information and Publicity) qualification and deepen knowledge of Belgian regulatory landscape.',
+    learningAgility: 5,
+    email: 'koen.vandenberg@example.com',
+    profileStatus: 'complete',
+    linkedInProfileUrl: 'https://linkedin.com/in/koenvandenberg',
+  },
+  {
+    id: 'i17',
+    type: 'internal',
+    name: 'Liesbeth De Smet',
+    currentRole: 'Quality Assurance Manager',
+    department: 'Quality Assurance',
+    skills: ['GMP', 'Quality Management', 'Regulatory Compliance', 'Dutch', 'English', 'Auditing', 'Documentation', 'Strategic Planning'],
+    experienceYears: 7,
+    performanceRating: 4,
+    careerAspirations: 'Transition from QA to regulatory affairs to broaden pharmaceutical compliance expertise.',
+    developmentGoals: 'Build expertise in pharmacovigilance systems and regulatory submissions for new compounds.',
+    learningAgility: 4,
+    email: 'liesbeth.desmet@example.com',
+    profileStatus: 'complete'
+  },
+
+  // Past Candidates
+  {
+    id: 'p21',
+    type: 'past',
+    name: 'Dr. Thomas Claes',
+    previousRoleAppliedFor: 'Regulatory Affairs Manager (18 months ago)',
+    skills: ['Pharmacy', 'Regulatory Affairs', 'EMA Guidelines', 'Clinical Trials', 'Dutch', 'English', 'French', 'Medical Writing'],
+    lastContactDate: '2023-11-20',
+    notes: 'Pharmacist with strong regulatory background. Accepted role at UCB Belgium but indicated openness to future opportunities. Has RIP qualification.',
+    email: 'thomas.claes@example.com',
+    profileStatus: 'complete'
+  },
+  {
+    id: 'p22',
+    type: 'past',
+    name: 'Dr. Eline Verhoeven',
+    previousRoleAppliedFor: 'Pharmacovigilance Specialist (2 years ago)',
+    skills: ['Pharmacovigilance', 'EU GVP', 'Case Processing', 'Signal Detection', 'Regulatory Reporting', 'Dutch', 'English'], lastContactDate: '2023-06-15',
+    notes: 'Medical doctor with PV experience. Was looking for more strategic role at the time. Now likely has 8+ years total pharma experience.',
+    email: 'eline.verhoeven@example.com',
+    profileStatus: 'complete'
+  },
+
+  // Uploaded Candidates
+  {
+    id: 'upl-26',
+    type: 'uploaded',
+    name: 'Dr. Marc Wouters',
+    skills: ['Pharmacy', 'Regulatory Affairs', 'Pharmacovigilance', 'RIP Qualification', 'Dutch', 'English', 'French', 'Marketing Authorizations', 'Life Cycle Management', 'Health Authority Relations'],
+    experienceYears: 9,
+    summary: 'Pharmacist with 9 years in pharmaceutical industry. Currently Regulatory & PV Manager at Janssen Pharmaceutica Belgium. RIP-qualified. Deep expertise in Belgian/EU regulatory requirements, MA life cycle management, and pharmacovigilance system oversight. Proven track record of successful Health Authority interactions and Early Access Programs.',
+    fileName: 'Marc_Wouters_PharmD.pdf',
+    email: 'marc.wouters@example.com',
+    profileStatus: 'complete'
+  },
+  {
+    id: 'upl-27',
+    type: 'uploaded',
+    name: 'Dr. Sophie Janssens',
+    skills: ['Medical Doctor', 'Pharmacovigilance', 'EU GVP', 'Risk Management', 'Regulatory Strategy', 'Dutch', 'English', 'German', 'Signal Detection', 'ICSR Processing'],
+    experienceYears: 6,
+    summary: 'Medical doctor with 6 years pharmacovigilance experience in biotech. Currently Senior PV Specialist at UCB. Strong technical knowledge of EU GVP and Belgian regulatory requirements. Experience as nominated QPPV deputy. Fluent in Dutch, English, and German. Seeking broader regulatory role combining PV and regulatory affairs.',
+    fileName: 'Sophie_Janssens_MD_PV.pdf',
+    email: 'sophie.janssens@example.com',
+    profileStatus: 'complete'
+  },
 ];

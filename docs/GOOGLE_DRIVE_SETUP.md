@@ -193,7 +193,7 @@ Once Production Mode is working:
 
 ## Support
 
-- Check [.env.example](.env.example) for detailed setup instructions
+- Check [.env.example](../.env.example) for detailed setup instructions
 - Review [services/googleDriveService.ts](services/googleDriveService.ts) for implementation details
 - See Google's [OAuth 2.0 documentation](https://developers.google.com/identity/protocols/oauth2)
 

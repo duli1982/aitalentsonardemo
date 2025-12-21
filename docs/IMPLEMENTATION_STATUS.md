@@ -153,7 +153,7 @@ talent-sonar-job+candidate-more-details/
 ├── types.ts                     # TypeScript interfaces
 ├── constants.ts                 # Mock data loader
 │
-├── DATABASE_SCHEMA.sql          # Production PostgreSQL schema
+├── sql/DATABASE_SCHEMA.sql      # Production PostgreSQL schema
 ├── BACKEND_ARCHITECTURE.md      # REST API design
 ├── PRODUCTION_ROADMAP.md        # 14-week implementation plan
 │
@@ -472,7 +472,7 @@ Technology - Budapest
 - **[TESTING_GUIDE.md](TESTING_GUIDE.md)** - Comprehensive testing instructions
 - **[QUICK_START.md](QUICK_START.md)** - 5-minute setup guide
 - **[TESTING_SUMMARY.md](TESTING_SUMMARY.md)** - Feature overview
-- **[DATABASE_SCHEMA.sql](DATABASE_SCHEMA.sql)** - Production database design
+- **[DATABASE_SCHEMA.sql](../sql/DATABASE_SCHEMA.sql)** - Production database design
 - **[BACKEND_ARCHITECTURE.md](BACKEND_ARCHITECTURE.md)** - API specification
 - **[PRODUCTION_ROADMAP.md](PRODUCTION_ROADMAP.md)** - Implementation timeline
 

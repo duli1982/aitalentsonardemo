@@ -1,0 +1,481 @@
+/**
+ * Autonomous Sourcing Agent
+ * Runs continuously in the background to find candidates matching open job requirements
+ * This is a PROACTIVE agent - it works while you sleep!
+ */
+
+import { semanticSearchService } from './SemanticSearchService';
+import { backgroundJobService } from './BackgroundJobService';
+import { pulseService } from './PulseService';
+import { eventBus, EVENTS } from '../utils/EventBus';
+import { processingMarkerService } from './ProcessingMarkerService';
+import { decisionArtifactService } from './DecisionArtifactService';
+import { pipelineEventService } from './PipelineEventService';
+import { fitAnalysisService } from './FitAnalysisService';
+
+const AI_PROMOTE_TO_LONG_LIST_THRESHOLD = 75;
+
+export interface SourcingMatch {
+    jobId: string;
+    jobTitle: string;
+    candidateId: string;
+    candidateName: string;
+    matchScore: number;
+    skills: string[];
+    discoveredAt: Date;
+}
+
+class AutonomousSourcingAgent {
+    private jobId: string | null = null;
+    private matches: SourcingMatch[] = [];
+    private isInitialized = false;
+
+    /**
+     * Initialize the autonomous sourcing agent
+     * This agent runs every 5 minutes to find new candidates
+     */
+    initialize(jobs: any[]) {
+        if (this.isInitialized) {
+            console.log('[AutonomousSourcingAgent] Already initialized');
+            return;
+        }
+
+        console.log('[AutonomousSourcingAgent] Initializing autonomous sourcing...');
+
+        // Register background job
+        this.jobId = backgroundJobService.registerJob({
+            name: 'Autonomous Candidate Sourcing',
+            type: 'SOURCING',
+            interval: 5 * 60 * 1000, // 5 minutes
+            enabled: true,
+            handler: async () => {
+                await this.scanForCandidates(jobs);
+            }
+        });
+
+        this.isInitialized = true;
+        console.log('[AutonomousSourcingAgent] ✓ Initialized successfully');
+    }
+
+    /**
+     * Main scanning logic - runs automatically
+     */
+    private async scanForCandidates(jobs: any[]) {
+        console.log('[AutonomousSourcingAgent] 🔍 Starting candidate scan...');
+
+        // Filter for open jobs only
+        const openJobs = jobs.filter(job =>
+            job.status === 'open' || job.status === 'active'
+        );
+
+        if (openJobs.length === 0) {
+            console.log('[AutonomousSourcingAgent] No open jobs to source for');
+            return;
+        }
+
+        let totalMatches = 0;
+
+        for (const job of openJobs) {
+            try {
+                // Build search query from job requirements
+                const searchQuery = this.buildSearchQuery(job);
+
+                // Search the vector database
+                const candidates = await semanticSearchService.search(searchQuery, {
+                    threshold: 0.75, // High threshold for autonomous matching
+                    limit: 3 // Only top 3 matches
+                });
+
+                // Filter out candidates already in the job pipeline
+                const newCandidates = candidates.filter(candidate => {
+                    const isAlreadyInPipeline = job.candidateIds?.includes(candidate.id);
+                    const alreadyDiscovered = this.matches.some(
+                        m => m.candidateId === candidate.id && m.jobId === job.id
+                    );
+
+                    return !isAlreadyInPipeline && !alreadyDiscovered;
+                });
+
+                if (newCandidates.length > 0) {
+                    console.log(
+                        `[AutonomousSourcingAgent] 🎯 Found ${newCandidates.length} new matches for "${job.title}"`
+                    );
+
+                    // Store matches
+                    for (const candidate of newCandidates) {
+                        const semanticScore = Math.round(candidate.similarity * 100);
+
+                        const sourcedStep = 'sourcing:stage:sourced:v1';
+                        const canStageSourced = await processingMarkerService.beginStep({
+                            candidateId: candidate.id,
+                            jobId: job.id,
+                            step: sourcedStep,
+                            ttlMs: 1000 * 60 * 60, // 1 hour
+                            metadata: { semanticScore, agent: 'sourcing-agent' }
+                        });
+
+                        if (!canStageSourced) {
+                            continue;
+                        }
+
+                        const match: SourcingMatch = {
+                            jobId: job.id,
+                            jobTitle: job.title,
+                            candidateId: candidate.id,
+                            candidateName: candidate.name,
+                            matchScore: semanticScore,
+                            skills: candidate.skills,
+                            discoveredAt: new Date()
+                        };
+
+                        this.matches.push(match);
+                        totalMatches++;
+
+                        // Place candidate into pipeline as "sourced" for this job.
+                        // We include a lightweight candidate payload so the app can import it into local state if needed.
+                        eventBus.emit(EVENTS.CANDIDATE_STAGED, {
+                            candidateId: candidate.id,
+                            candidateName: candidate.name,
+                            jobId: job.id,
+                            stage: 'sourced',
+                            source: 'sourcing-agent',
+                            matchScore: semanticScore,
+                            candidate: {
+                                id: candidate.id,
+                                type: 'uploaded',
+                                name: candidate.name,
+                                role: candidate.metadata?.role || candidate.metadata?.title || 'Candidate',
+                                skills: candidate.skills || [],
+                                experience: candidate.metadata?.experience ?? candidate.metadata?.experienceYears ?? 0,
+                                location: candidate.metadata?.location || candidate.metadata?.city || '',
+                                availability: candidate.metadata?.availability || 'Unknown',
+                                email: candidate.email,
+                                source: candidate.type,
+                                matchScores: { [job.id]: semanticScore },
+                                matchRationales: { [job.id]: `Semantic match ${semanticScore}% — sourced by Autonomous Sourcing Agent. Running AI shortlist...` },
+                                matchRationale: `Semantic match ${semanticScore}% — sourced by Autonomous Sourcing Agent.`
+                            }
+                        });
+
+                        void pipelineEventService.logEvent({
+                            candidateId: candidate.id,
+                            candidateName: candidate.name,
+                            jobId: job.id,
+                            jobTitle: job.title,
+                            eventType: 'SOURCED',
+                            actorType: 'agent',
+                            actorId: 'sourcing-agent',
+                            toStage: 'sourced',
+                            summary: `Sourced by agent: semantic match ${semanticScore}%.`,
+                            metadata: { semanticScore, agentType: 'SOURCING' }
+                        });
+
+                        void processingMarkerService.completeStep({
+                            candidateId: candidate.id,
+                            jobId: job.id,
+                            step: sourcedStep,
+                            metadata: { semanticScore }
+                        });
+
+                        // Send notification to user via Pulse Feed
+                        pulseService.addEvent({
+                            type: 'AGENT_ACTION',
+                            message: `🤖 Sourcing Agent found ${candidate.name} (${Math.round(candidate.similarity * 100)}% match) for "${job.title}"`,
+                            severity: 'info',
+                            metadata: {
+                                candidateId: candidate.id,
+                                candidateName: candidate.name,
+                                jobId: job.id,
+                                jobTitle: job.title,
+                                matchScore: semanticScore,
+                                agentType: 'SOURCING'
+                            }
+                        });
+
+                        // AI gating: AI score >= 75 → Long List, else → New with score note
+                        try {
+                            const analysisStep = 'shortlist_analysis:v1';
+                            const canAnalyze = await processingMarkerService.beginStep({
+                                candidateId: candidate.id,
+                                jobId: job.id,
+                                step: analysisStep,
+                                ttlMs: 1000 * 60 * 30,
+                                metadata: { semanticScore, agent: 'sourcing-agent' }
+                            });
+
+                            if (!canAnalyze) {
+                                continue;
+                            }
+
+                            const candidateForAi = {
+                                id: candidate.id,
+                                type: 'uploaded',
+                                name: candidate.name,
+                                role: candidate.metadata?.role || candidate.metadata?.title || 'Candidate',
+                                skills: candidate.skills || [],
+                                experienceYears: candidate.metadata?.experienceYears ?? candidate.metadata?.experience ?? 0,
+                                summary: candidate.metadata?.summary || candidate.metadata?.content || '',
+                                location: candidate.metadata?.location || candidate.metadata?.city || '',
+                                email: candidate.email
+                            } as any;
+
+                            const fit = await fitAnalysisService.analyze(job as any, candidateForAi as any, semanticScore);
+                            const aiScore = Math.round(fit.score);
+                            const aiRationale = String(fit.rationale ?? '').trim();
+                            const shouldPromote = aiScore >= AI_PROMOTE_TO_LONG_LIST_THRESHOLD;
+                            const targetStage = shouldPromote ? 'long_list' : 'new';
+                            const decision =
+                                aiScore >= 85 ? 'STRONG_PASS' : aiScore >= 75 ? 'PASS' : aiScore >= 60 ? 'BORDERLINE' : 'FAIL';
+
+                            void decisionArtifactService.saveShortlistAnalysis({
+                                candidateId: candidate.id,
+                                candidateName: candidate.name,
+                                jobId: job.id,
+                                jobTitle: job.title,
+                                score: aiScore,
+                                decision: decision as any,
+                                summary: aiRationale || undefined,
+                                details: {
+                                    semanticScore,
+                                    aiScore,
+                                    threshold: AI_PROMOTE_TO_LONG_LIST_THRESHOLD,
+                                    targetStage,
+                                    method: fit.method,
+                                    confidence: fit.confidence,
+                                    reasons: fit.reasons ?? []
+                                },
+                                externalId: fitAnalysisService.getExternalIdForJob(job, 'agent'),
+                                rubricName: 'Shortlist Rubric',
+                                rubricVersion: 1
+                            });
+
+                            void pipelineEventService.logEvent({
+                                candidateId: candidate.id,
+                                candidateName: candidate.name,
+                                jobId: job.id,
+                                jobTitle: job.title,
+                                eventType: 'SHORTLIST_ANALYZED',
+                                actorType: 'agent',
+                                actorId: 'sourcing-agent',
+                                summary: `AI shortlist scored ${aiScore}/100 (${decision}).`,
+                                metadata: { semanticScore, aiScore, decision, targetStage }
+                            });
+                            const note = shouldPromote
+                                ? `AI shortlist score ${aiScore}/100 (≥ ${AI_PROMOTE_TO_LONG_LIST_THRESHOLD}). Auto-promoted to Long List. ${aiRationale}`
+                                : `AI shortlist score ${aiScore}/100 (< ${AI_PROMOTE_TO_LONG_LIST_THRESHOLD}). Moved to New for recruiter review. ${aiRationale}`;
+
+                            eventBus.emit(EVENTS.CANDIDATE_UPDATED, {
+                                candidateId: candidate.id,
+                                updates: {
+                                    matchScores: { [job.id]: aiScore },
+                                    matchRationales: { [job.id]: note }
+                                }
+                            });
+
+                            eventBus.emit(EVENTS.CANDIDATE_STAGED, {
+                                candidateId: candidate.id,
+                                candidateName: candidate.name,
+                                jobId: job.id,
+                                stage: targetStage,
+                                source: 'sourcing-agent',
+                                score: aiScore
+                            });
+
+                            pulseService.addEvent({
+                                type: 'AGENT_ACTION',
+                                message: shouldPromote
+                                    ? `✅ ${candidate.name} auto-promoted to Long List (${aiScore}/100 AI score) for "${job.title}".`
+                                    : `📝 ${candidate.name} moved to New for recruiter review (${aiScore}/100 AI score) for "${job.title}".`,
+                                severity: shouldPromote ? 'success' : 'info',
+                                metadata: {
+                                    candidateId: candidate.id,
+                                    jobId: job.id,
+                                    aiScore,
+                                    semanticScore,
+                                    targetStage,
+                                    agentType: 'SOURCING'
+                                }
+                            });
+
+                            void pipelineEventService.logEvent({
+                                candidateId: candidate.id,
+                                candidateName: candidate.name,
+                                jobId: job.id,
+                                jobTitle: job.title,
+                                eventType: 'STAGE_MOVED',
+                                actorType: 'agent',
+                                actorId: 'sourcing-agent',
+                                fromStage: 'sourced',
+                                toStage: targetStage,
+                                summary: shouldPromote
+                                    ? `Auto-promoted to Long List (AI ${aiScore}/100).`
+                                    : `Moved to New for recruiter review (AI ${aiScore}/100).`,
+                                metadata: { aiScore, semanticScore, decision }
+                            });
+
+                            void processingMarkerService.completeStep({
+                                candidateId: candidate.id,
+                                jobId: job.id,
+                                step: analysisStep,
+                                metadata: { semanticScore, aiScore, decision, targetStage }
+                            });
+                        } catch (error) {
+                            console.warn('[AutonomousSourcingAgent] AI shortlist failed; moving to New for review:', error);
+                            void pipelineEventService.logEvent({
+                                candidateId: candidate.id,
+                                candidateName: candidate.name,
+                                jobId: job.id,
+                                jobTitle: job.title,
+                                eventType: 'SHORTLIST_FAILED',
+                                actorType: 'agent',
+                                actorId: 'sourcing-agent',
+                                summary: 'AI shortlist failed (quota/rate-limit).',
+                                metadata: { semanticScore }
+                            });
+
+                            void processingMarkerService.completeStep({
+                                candidateId: candidate.id,
+                                jobId: job.id,
+                                step: analysisStep,
+                                metadata: { semanticScore, error: error instanceof Error ? error.message : String(error) }
+                            });
+                            eventBus.emit(EVENTS.CANDIDATE_UPDATED, {
+                                candidateId: candidate.id,
+                                updates: {
+                                    matchRationales: { [job.id]: `AI shortlist failed (quota/rate-limit). Moved to New for recruiter review. Semantic match ${semanticScore}%.` }
+                                }
+                            });
+                            eventBus.emit(EVENTS.CANDIDATE_STAGED, {
+                                candidateId: candidate.id,
+                                candidateName: candidate.name,
+                                jobId: job.id,
+                                stage: 'new',
+                                source: 'sourcing-agent'
+                            });
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error(`[AutonomousSourcingAgent] Error scanning for ${job.title}:`, error);
+            }
+        }
+
+        if (totalMatches > 0) {
+            console.log(
+                `[AutonomousSourcingAgent] ✓ Scan complete. Found ${totalMatches} total new matches.`
+            );
+        } else {
+            console.log('[AutonomousSourcingAgent] ✓ Scan complete. No new matches found.');
+        }
+    }
+
+    /**
+     * Build semantic search query from job requirements
+     */
+    private buildSearchQuery(job: any): string {
+        const parts: string[] = [];
+
+        // Add title/role
+        if (job.title) {
+            parts.push(job.title);
+        }
+
+        // Add seniority
+        if (job.seniority) {
+            parts.push(job.seniority);
+        }
+
+        // Add required skills
+        if (job.requiredSkills && job.requiredSkills.length > 0) {
+            parts.push(`with expertise in ${job.requiredSkills.slice(0, 5).join(', ')}`);
+        }
+
+        // Add experience level
+        if (job.experienceRequired) {
+            parts.push(`${job.experienceRequired}+ years experience`);
+        }
+
+        return parts.join(' ');
+    }
+
+    /**
+     * Get all discovered matches
+     */
+    getMatches(jobId?: string): SourcingMatch[] {
+        if (jobId) {
+            return this.matches.filter(m => m.jobId === jobId);
+        }
+        return this.matches;
+    }
+
+    /**
+     * Get match count for a specific job
+     */
+    getMatchCount(jobId: string): number {
+        return this.matches.filter(m => m.jobId === jobId).length;
+    }
+
+    /**
+     * Clear matches (e.g., after user reviews them)
+     */
+    clearMatches(jobId?: string) {
+        if (jobId) {
+            this.matches = this.matches.filter(m => m.jobId !== jobId);
+        } else {
+            this.matches = [];
+        }
+    }
+
+    /**
+     * Enable/disable the agent
+     */
+    setEnabled(enabled: boolean) {
+        if (!this.jobId) {
+            console.warn('[AutonomousSourcingAgent] Not initialized yet');
+            return;
+        }
+
+        backgroundJobService.setJobEnabled(this.jobId, enabled);
+        console.log(`[AutonomousSourcingAgent] Agent ${enabled ? 'enabled' : 'disabled'}`);
+    }
+
+    /**
+     * Get agent status
+     */
+    getStatus() {
+        if (!this.jobId) {
+            return {
+                initialized: false,
+                enabled: false,
+                lastRun: null,
+                nextRun: null,
+                totalMatches: 0
+            };
+        }
+
+        const job = backgroundJobService.getJob(this.jobId);
+
+        return {
+            initialized: this.isInitialized,
+            enabled: job?.enabled || false,
+            lastRun: job?.lastRun || null,
+            nextRun: job?.nextRun || null,
+            totalMatches: this.matches.length,
+            recentResults: backgroundJobService.getJobResults(this.jobId, 5)
+        };
+    }
+
+    /**
+     * Manually trigger a scan (for testing)
+     */
+    async triggerScan(jobs: any[]) {
+        if (!this.jobId) {
+            throw new Error('Agent not initialized');
+        }
+
+        console.log('[AutonomousSourcingAgent] Manual scan triggered');
+        await backgroundJobService.runJob(this.jobId);
+    }
+}
+
+export const autonomousSourcingAgent = new AutonomousSourcingAgent();
