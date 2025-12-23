@@ -61,6 +61,9 @@ export const useAllSupabaseCandidates = (options: AllCandidatesOptions = {}) => 
             const viewAttempt = await supabase
                 .from('candidate_documents_view')
                 .select('candidate_id, name, email, title, location, experience_years, skills, document_id, content, document_metadata, candidate_updated_at')
+                // Draft candidates (pending_review) have no active document yet -> document_id is null in the view.
+                // Keep them out of recruiter-facing lists until explicitly activated via Inbox.
+                .not('document_id', 'is', null)
                 .order('candidate_updated_at', { ascending: false })
                 .limit(currentLimit);
 

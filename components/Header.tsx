@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Brain, Briefcase, GitBranch, Users, Building2, TrendingUp, Bot, Inbox, Map, Shield, LayoutGrid, Bell, Menu, X, BarChart2, Sparkles } from 'lucide-react';
+import { Brain, Briefcase, GitBranch, Users, Building2, TrendingUp, Bot, Inbox, Map, Shield, LayoutGrid, Bell, Menu, X, BarChart2, Sparkles, UploadCloud } from 'lucide-react';
 import PulseFeed from './PulseFeed';
 import { pulseService } from '../services/PulseService';
 import { AppView } from '../types';
@@ -10,6 +10,7 @@ interface HeaderProps {
     onViewChange: (view: AppView) => void;
     onOpenSmartSearch?: () => void;
     onOpenRAG?: () => void;
+    onOpenUploadCv?: () => void;
 }
 
 interface NavItem {
@@ -49,7 +50,7 @@ const NAV_GROUPS: { name: string; items: NavItem[] }[] = [
     }
 ];
 
-const Header: React.FC<HeaderProps> = ({ activeView, onViewChange, onOpenSmartSearch, onOpenRAG }) => {
+const Header: React.FC<HeaderProps> = ({ activeView, onViewChange, onOpenSmartSearch, onOpenRAG, onOpenUploadCv }) => {
     const [isPulseOpen, setIsPulseOpen] = useState(false);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -122,6 +123,20 @@ const Header: React.FC<HeaderProps> = ({ activeView, onViewChange, onOpenSmartSe
                 {/* Right side buttons */}
                 <div className="flex items-center space-x-2">
                     <AgentStatusIndicator onOpenAutonomousAgents={() => onViewChange('autonomous-agents')} />
+
+                    {/* Upload CVs */}
+                    {onOpenUploadCv && (
+                        <button
+                            onClick={onOpenUploadCv}
+                            className="hidden sm:flex items-center px-3 py-1.5 md:px-4 md:py-2 bg-slate-800 hover:bg-slate-700 text-white font-semibold rounded-full transition-all text-xs md:text-sm shadow-lg border border-slate-700"
+                            title="Upload CVs - Create draft candidates for review"
+                            aria-label="Upload CVs"
+                            type="button"
+                        >
+                            <UploadCloud className="h-4 w-4 mr-1 md:mr-2" aria-hidden="true" />
+                            <span className="hidden md:inline">Upload CVs</span>
+                        </button>
+                    )}
 
                     {/* Smart Search Button */}
                     {onOpenSmartSearch && (
@@ -204,6 +219,15 @@ const Header: React.FC<HeaderProps> = ({ activeView, onViewChange, onOpenSmartSe
 
                         {/* Mobile Action Buttons */}
                         <div className="pt-4 border-t border-slate-700 space-y-2">
+                            {onOpenUploadCv && (
+                                <button
+                                    onClick={() => { onOpenUploadCv(); setIsMobileMenuOpen(false); }}
+                                    className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-slate-800 text-white font-semibold rounded-lg border border-slate-700"
+                                >
+                                    <UploadCloud size={18} aria-hidden="true" />
+                                    Upload CVs
+                                </button>
+                            )}
                             {onOpenSmartSearch && (
                                 <button
                                     onClick={() => { onOpenSmartSearch(); setIsMobileMenuOpen(false); }}

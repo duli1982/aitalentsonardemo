@@ -352,7 +352,18 @@ const AppContent = () => {
         openCandidateJobDrawer={openCandidateJobDrawer}
       />
       <Routes>
-        <Route path="/" element={<MainLayout error={error} setError={setError} onOpenSmartSearch={() => setSmartSearchModalOpen(true)} onOpenRAG={() => setRAGModalOpen(true)} />}>
+        <Route
+          path="/"
+          element={
+            <MainLayout
+              error={error}
+              setError={setError}
+              onOpenSmartSearch={() => setSmartSearchModalOpen(true)}
+              onOpenRAG={() => setRAGModalOpen(true)}
+              onOpenUploadCv={() => setUploadCvModalOpen(true)}
+            />
+          }
+        >
           <Route index element={
             <JobsPage
               jobs={jobs}

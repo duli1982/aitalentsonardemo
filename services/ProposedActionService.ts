@@ -4,7 +4,7 @@ import { eventBus, EVENTS } from '../utils/EventBus';
 
 export type ProposedActionStatus = 'proposed' | 'applied' | 'dismissed';
 
-export type ProposedActionType = 'MOVE_CANDIDATE_TO_STAGE' | 'UPDATE_VERIFIED_SKILLS';
+export type ProposedActionType = 'MOVE_CANDIDATE_TO_STAGE' | 'UPDATE_VERIFIED_SKILLS' | 'ACTIVATE_RESUME_DRAFT';
 
 export type ProposedAction = {
   id: string;
@@ -30,6 +30,15 @@ export type ProposedAction = {
         verifiedSkillsDelta: ValidatedSkill[];
         badgesAdded: string[];
         skillsAdded: string[];
+      }
+    | {
+        type: 'ACTIVATE_RESUME_DRAFT';
+        candidateId: string;
+        documentId: number;
+        fileName?: string;
+        parsedResume?: any | null;
+        parseStatus: 'PARSED' | 'PENDING_PARSE';
+        retryAfterMs?: number;
       };
   evidence?: Array<{ label: string; value: string }>;
 };

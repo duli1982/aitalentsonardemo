@@ -418,6 +418,30 @@ Step 3: Report success/failure for each
 
 ---
 
+#### 3. **Resume Upload (Draft + Pending Review)**
+
+The app supports uploading CVs (PDF/DOCX/TXT/MD) and parsing them into a **Draft Candidate + Pending Candidate Document**.
+
+**Trust-first behavior (hard boundary):**
+- **On upload**: the server stores a draft candidate (`candidates.status = pending_review`) and a **pending** document snapshot (`candidate_documents.is_active = false`).
+- The draft is **not used for matching/search/pipeline** until explicitly activated.
+- **On review + apply (Agent Inbox)**: the server generates the embedding, sets the document **active**, and updates `candidates.active_document_id`.
+
+**Where it lives in the UI**
+- Use the **Upload Candidate CVs** modal (top bar upload icon).
+- Each successful upload creates an **Inbox proposal**: “Activate draft candidate (resume upload)”.
+- Apply happens in **/agent-inbox** (recommend-only by default).
+
+**Server-side parsing (recommended)**
+- Implemented via Vercel Functions:
+  - `POST /api/resume/upload` (extract text + create draft + best-effort parse)
+  - `POST /api/resume/parse` (retry parsing from stored document text)
+  - `POST /api/resume/apply` (activate + embed + set active doc)
+- Requires server env vars: `SUPABASE_SERVICE_ROLE_KEY` and `GEMINI_API_KEY` (do not expose in client).
+
+**Local dev note**
+- `npm run dev` (Vite) does not run Vercel Functions. Use `vercel dev` to enable `/api/*` endpoints locally.
+
 ### Migration vs. Batch Ingestion
 
 | Feature | Mock Data Migration | Batch Ingestion |

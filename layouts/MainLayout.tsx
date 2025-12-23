@@ -11,9 +11,10 @@ interface MainLayoutProps {
     setError: (error: string | null) => void;
     onOpenSmartSearch?: () => void;
     onOpenRAG?: () => void;
+    onOpenUploadCv?: () => void;
 }
 
-const MainLayout: React.FC<MainLayoutProps> = ({ error, setError, onOpenSmartSearch, onOpenRAG }) => {
+const MainLayout: React.FC<MainLayoutProps> = ({ error, setError, onOpenSmartSearch, onOpenRAG, onOpenUploadCv }) => {
     const navigate = useNavigate();
     const location = useLocation();
 
@@ -43,6 +44,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ error, setError, onOpenSmartSea
                 onViewChange={handleViewChange}
                 onOpenSmartSearch={onOpenSmartSearch}
                 onOpenRAG={onOpenRAG}
+                onOpenUploadCv={onOpenUploadCv}
             />
 
             <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-4">

@@ -58,6 +58,10 @@ Talent Sonar uses a **trust-first** architecture:
 - `candidate_documents_view` joins candidates → active document (canonical read model)
 - `match_candidates()` searches **active documents by default**, with an optional `include_historical`
 
+Draft boundary (resume uploads):
+- Draft uploads create `candidates.status = pending_review` and a **non-active** document snapshot (`candidate_documents.is_active = false`).
+- Drafts are not eligible for `match_candidates()` until a recruiter activates them (sets `is_active=true` and `active_document_id`).
+
 In Supabase SQL Editor, run the repo script:
 
 ```sql

@@ -35,8 +35,9 @@ const resolveSupabaseCandidateById = async (id: string): Promise<Candidate | nul
         // Prefer system-of-record view (candidate_id is the stable identifier used across the app).
         const viewAttempt = await supabase
             .from('candidate_documents_view')
-            .select('candidate_id, name, email, title, location, experience_years, skills, content, document_metadata')
+            .select('candidate_id, name, email, title, location, experience_years, skills, content, document_metadata, document_id')
             .eq('candidate_id', id)
+            .not('document_id', 'is', null)
             .maybeSingle();
 
         const legacyAttempt = viewAttempt.error

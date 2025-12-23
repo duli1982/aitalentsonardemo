@@ -1,11 +1,12 @@
-import React, { useState, useCallback } from 'react';
-import type { UploadedCandidate } from '../../types';
+import React, { useCallback, useState } from 'react';
 import { X, UploadCloud, FileText, Loader2, CheckCircle } from 'lucide-react';
-import { parseCvContent } from '../../services/geminiService';
+import { proposedActionService } from '../../services/ProposedActionService';
+import { uploadResumeToDraft, type ResumeDraftUploadResult } from '../../services/ResumeDraftService';
+import { useToast } from '../../contexts/ToastContext';
 
 interface UploadCvModalProps {
   onClose: () => void;
-  onAddCandidates: (candidates: UploadedCandidate[]) => void;
+  onUpload?: (candidates: any[]) => void;
 }
 
 type FileStatus = 'pending' | 'parsing' | 'success' | 'error';
@@ -13,11 +14,12 @@ type FileStatus = 'pending' | 'parsing' | 'success' | 'error';
 interface UploadFile {
   file: File;
   status: FileStatus;
-  result?: UploadedCandidate;
+  result?: ResumeDraftUploadResult;
   error?: string;
 }
 
-const UploadCvModal: React.FC<UploadCvModalProps> = ({ onClose, onAddCandidates }) => {
+const UploadCvModal: React.FC<UploadCvModalProps> = ({ onClose }) => {
+  const { showToast } = useToast();
   const [files, setFiles] = useState<UploadFile[]>([]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -35,40 +37,55 @@ const UploadCvModal: React.FC<UploadCvModalProps> = ({ onClose, onAddCandidates 
     
     for (const uploadFile of pendingFiles) {
       try {
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-          const dataUrl = e.target?.result as string;
-          if (dataUrl) {
-            try {
-              const [header, base64Data] = dataUrl.split(',');
-              if (!base64Data) {
-                throw new Error("Invalid file format");
-              }
-              const mimeType = header.match(/:(.*?);/)?.[1] || 'application/octet-stream';
-              const parsedCandidate = await parseCvContent(base64Data, mimeType, uploadFile.file.name);
-              setFiles(currentFiles => currentFiles.map(f => f.file.name === uploadFile.file.name ? { ...f, status: 'success', result: parsedCandidate } : f));
-            } catch (error) {
-               setFiles(currentFiles => currentFiles.map(f => f.file.name === uploadFile.file.name ? { ...f, status: 'error', error: 'AI parsing failed.' } : f));
-            }
-          } else {
-             setFiles(currentFiles => currentFiles.map(f => f.file.name === uploadFile.file.name ? { ...f, status: 'error', error: 'Could not read file.' } : f));
-          }
-        };
-        reader.onerror = () => {
-             setFiles(currentFiles => currentFiles.map(f => f.file.name === uploadFile.file.name ? { ...f, status: 'error', error: 'File read error.' } : f));
-        };
-        reader.readAsDataURL(uploadFile.file);
+        const result = await uploadResumeToDraft(uploadFile.file);
+        if (!result.success) {
+          const hint = result.retryAfterMs ? ` Retry in ${Math.round(result.retryAfterMs / 1000)}s.` : '';
+          setFiles(currentFiles =>
+            currentFiles.map(f =>
+              f.file.name === uploadFile.file.name ? { ...f, status: 'error', error: `${result.error.message}.${hint}` } : f
+            )
+          );
+          continue;
+        }
+
+        setFiles(currentFiles =>
+          currentFiles.map(f => (f.file.name === uploadFile.file.name ? { ...f, status: 'success', result: result.data } : f))
+        );
+
+        proposedActionService.add({
+          agentType: 'USER',
+          title: 'Activate draft candidate (resume upload)',
+          description:
+            result.data.parseStatus === 'PARSED'
+              ? 'Review and apply this resume upload to activate the candidate.'
+              : 'Resume uploaded as draft. Parsing is pending (rate limited). You can retry parse, then apply.',
+          candidateId: result.data.candidateId,
+          payload: {
+            type: 'ACTIVATE_RESUME_DRAFT',
+            candidateId: result.data.candidateId,
+            documentId: result.data.documentId,
+            fileName: uploadFile.file.name,
+            parsedResume: result.data.parsedResume,
+            parseStatus: result.data.parseStatus,
+            retryAfterMs: result.data.retryAfterMs
+          },
+          evidence: [
+            { label: 'File', value: uploadFile.file.name },
+            { label: 'SHA256', value: result.data.extracted.sha256.slice(0, 12) + '…' },
+            { label: 'Draft', value: 'pending_review' }
+          ]
+        });
       } catch (error) {
          setFiles(currentFiles => currentFiles.map(f => f.file.name === uploadFile.file.name ? { ...f, status: 'error', error: 'An unexpected error occurred.' } : f));
       }
     }
-  }, [files]);
+
+    if (pendingFiles.length > 0) {
+      showToast('Draft candidates created. Review & apply from Agent Inbox.', 'success');
+    }
+  }, [files, showToast]);
   
   const handleFinish = () => {
-      const successfulCandidates = files.filter(f => f.status === 'success' && f.result).map(f => f.result!);
-      if(successfulCandidates.length > 0) {
-          onAddCandidates(successfulCandidates);
-      }
       onClose();
   }
 
@@ -115,10 +132,10 @@ const UploadCvModal: React.FC<UploadCvModalProps> = ({ onClose, onAddCandidates 
         </div>
         <div className="flex justify-end space-x-3 pt-4">
           <button onClick={handleFinish} className="px-4 py-2 rounded-md bg-slate-600 hover:bg-slate-500 text-gray-200 font-medium transition-colors">
-            {files.some(f => f.status === 'success') ? 'Add Parsed & Close' : 'Close'}
+            Close
           </button>
           <button onClick={handleParse} disabled={!hasPending || isParsing} className="px-6 py-2 rounded-md bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white font-semibold transition-all disabled:opacity-50">
-            {isParsing ? 'Parsing...' : 'Parse CVs with AI'}
+            {isParsing ? 'Uploading...' : 'Upload CVs (Draft)'}
           </button>
         </div>
       </div>

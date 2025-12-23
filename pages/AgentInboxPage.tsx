@@ -6,6 +6,7 @@ import type { PipelineStage } from '../types';
 import ConfirmModal from '../components/modals/ConfirmModal';
 import { applyVerifiedSkillsProposal } from '../services/VerifiedSkillsService';
 import { useToast } from '../contexts/ToastContext';
+import { applyResumeDraft, retryParseResumeDraft } from '../services/ResumeDraftService';
 
 const statusLabel: Record<ProposedActionStatus, string> = {
   proposed: 'Proposed',
@@ -70,6 +71,30 @@ const AgentInboxPage: React.FC = () => {
       return true;
     }
 
+    if (action.payload.type === 'ACTIVATE_RESUME_DRAFT') {
+      if (action.payload.parseStatus === 'PENDING_PARSE') {
+        const parsed = await retryParseResumeDraft({ candidateId: action.payload.candidateId, documentId: action.payload.documentId });
+        if (!parsed.success) {
+          showToast(parsed.error.message, 'warning');
+          return false;
+        }
+        proposedActionService.upsert({
+          ...action,
+          payload: { ...action.payload, parsedResume: parsed.data.parsedResume, parseStatus: 'PARSED', retryAfterMs: undefined }
+        });
+      }
+
+      const applied = await applyResumeDraft({ candidateId: action.payload.candidateId, documentId: action.payload.documentId });
+      if (!applied.success) {
+        showToast(applied.error.message, 'warning');
+        return false;
+      }
+
+      proposedActionService.markStatus(action.id, 'applied');
+      showToast('Draft activated. Candidate is now active and searchable.', 'success');
+      return true;
+    }
+
     return false;
   };
 
@@ -120,6 +145,30 @@ const AgentInboxPage: React.FC = () => {
               </div>
               <div className="text-xs text-slate-400">
                 This is a write action. It will update `candidates.skills` and store proof in candidate metadata (passport + assessment history).
+              </div>
+            </div>
+          ) : confirmAction?.payload.type === 'ACTIVATE_RESUME_DRAFT' ? (
+            <div className="space-y-2">
+              <div className="text-slate-200">
+                Activate this draft candidate and set the uploaded document as the active CV snapshot?
+              </div>
+              <div className="text-sm bg-slate-800/60 border border-slate-700 rounded-lg p-3 space-y-2">
+                <div className="text-xs text-slate-400">Candidate {confirmAction.payload.candidateId}</div>
+                <div className="text-xs text-slate-400">Document {confirmAction.payload.documentId}</div>
+                {confirmAction.payload.fileName ? (
+                  <div className="text-xs text-slate-300">
+                    File: <span className="text-white font-semibold">{confirmAction.payload.fileName}</span>
+                  </div>
+                ) : null}
+                <div className="text-xs text-slate-300">
+                  Parse status: <span className="text-white font-semibold">{confirmAction.payload.parseStatus}</span>
+                  {confirmAction.payload.parseStatus === 'PENDING_PARSE' ? (
+                    <span className="text-slate-400"> (will retry before applying)</span>
+                  ) : null}
+                </div>
+              </div>
+              <div className="text-xs text-slate-400">
+                This is a write action. It will make the candidate eligible for matching and pipeline workflows.
               </div>
             </div>
           ) : null
