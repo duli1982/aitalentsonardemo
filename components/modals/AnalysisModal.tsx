@@ -5,6 +5,7 @@ import JobAnalysisContent from '../analysis/JobAnalysisContent';
 import FitAnalysisContent from '../analysis/FitAnalysisContent';
 import HiddenGemAnalysisContent from '../analysis/HiddenGemAnalysisContent';
 import OutreachContent from '../analysis/OutreachContent';
+import { useToast } from '../../contexts/ToastContext';
 
 interface AnalysisModalProps {
     type: string;
@@ -17,6 +18,7 @@ interface AnalysisModalProps {
 }
 
 const AnalysisModal: React.FC<AnalysisModalProps> = ({ type, job, candidate, isLoading, analysisResult, onClose, onInitiateAnalysis }) => {
+    const { showToast } = useToast();
     const TITLES: { [key: string]: { icon: React.ReactNode, text: string } } = {
         JOB_SUMMARY: { icon: <Target className="h-6 w-6 mr-2 text-sky-400" />, text: "AI Job Analysis" },
         FIT_ANALYSIS: { icon: <TrendingUp className="h-6 w-6 mr-2 text-purple-400" />, text: "AI Fit Analysis" },
@@ -79,7 +81,14 @@ const AnalysisModal: React.FC<AnalysisModalProps> = ({ type, job, candidate, isL
                         </button>
                     )}
 
-                    {type === 'OUTREACH' && <button onClick={() => alert(`Simulated: Message sent to ${candidate?.name}!`)} className="px-6 py-2 rounded-md bg-gradient-to-r from-sky-500 to-blue-600 text-white font-semibold">Send Message</button>}
+                    {type === 'OUTREACH' && (
+                        <button
+                            onClick={() => showToast(`Simulated: Message sent to ${candidate?.name || 'candidate'}!`, 'success')}
+                            className="px-6 py-2 rounded-md bg-gradient-to-r from-sky-500 to-blue-600 text-white font-semibold"
+                        >
+                            Send Message
+                        </button>
+                    )}
                 </div>
             </div>
         </div>

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Mail, Loader2, Copy, Send, Sparkles, CheckCircle } from 'lucide-react';
 import type { Candidate, Job } from '../../types';
 import { aiService } from '../../services/AIService';
+import { useToast } from '../../contexts/ToastContext';
 
 interface EmailTemplateLibraryModalProps {
     isOpen: boolean;
@@ -134,6 +135,7 @@ function buildTemplateEmail(params: { templateId: TemplateType; candidate: Candi
 }
 
 const EmailTemplateLibraryModal: React.FC<EmailTemplateLibraryModalProps> = ({ isOpen, onClose, candidate, job }) => {
+    const { showToast } = useToast();
     const [selectedTemplate, setSelectedTemplate] = useState<TemplateType | null>(null);
     const [personalizedEmail, setPersonalizedEmail] = useState<PersonalizedEmail | null>(null);
     const [isGenerating, setIsGenerating] = useState(false);
@@ -208,7 +210,7 @@ const EmailTemplateLibraryModal: React.FC<EmailTemplateLibraryModalProps> = ({ i
     };
 
     const handleSend = () => {
-        alert(`Email would be sent to ${candidate.email}\n\nSubject: ${personalizedEmail?.subject}\n\nThis is a demo - email not actually sent.`);
+        showToast(`Demo: email queued for ${candidate.email || 'candidate'}. (Not actually sent)`, 'info', 7000);
         onClose();
     };
 

@@ -12,6 +12,7 @@
 
 import { supabase } from './supabaseClient';
 import { aiService } from './AIService';
+import { candidatePersistenceService } from './CandidatePersistenceService';
 import {
     JOB_ROLE_TEMPLATES,
     FIRST_NAMES,
@@ -282,6 +283,8 @@ class BulkIngestionService {
      * Ingest a single profile
      */
     private async ingestSingleProfile(profile: BulkProfile): Promise<void> {
+        const candidateId = (globalThis as any)?.crypto?.randomUUID?.() ?? crypto.randomUUID();
+
         // Build content string
         const content = this.buildContentString(profile);
 
@@ -292,34 +295,35 @@ class BulkIngestionService {
             throw new Error('Failed to generate embedding');
         }
 
-        // Insert into Supabase and get the candidate ID
-        const { data: candidateData, error } = await supabase!
-            .from('candidate_documents')
-            .insert({
-                content,
-                metadata: {
-                    name: profile.name,
-                    title: profile.title,
-                    email: profile.email,
-                    skills: profile.skills,
-                    experienceYears: profile.yearsOfExperience,
-                    education: profile.education,
-                    location: profile.location,
-                    currentCompany: profile.company,
-                    industry: profile.industry,
-                    type: 'uploaded', // Mark as uploaded type
-                    source: 'bulk_ingestion'
-                },
-                embedding: embeddingResult.data
-            })
-            .select('id')
-            .single();
+        const metadata = {
+            id: candidateId,
+            name: profile.name,
+            title: profile.title,
+            email: profile.email,
+            skills: profile.skills,
+            experienceYears: profile.yearsOfExperience,
+            education: profile.education,
+            location: profile.location,
+            currentCompany: profile.company,
+            industry: profile.industry,
+            type: 'uploaded', // Mark as uploaded type
+            source: 'bulk_ingestion'
+        };
 
-        if (error || !candidateData) {
-            throw new Error(`Supabase insert error: ${error?.message || 'No data returned'}`);
-        }
-
-        const candidateId = candidateData.id;
+        await candidatePersistenceService.upsertCandidateAndActiveDocument({
+            candidateId,
+            fullName: profile.name,
+            email: profile.email,
+            title: profile.title,
+            location: profile.location,
+            experienceYears: profile.yearsOfExperience,
+            skills: profile.skills,
+            candidateMetadata: metadata,
+            documentContent: content,
+            documentMetadata: metadata,
+            embedding: embeddingResult.data,
+            source: 'bulk_ingestion'
+        });
 
         // Create graph relationships (don't fail entire profile if relationships fail)
         try {

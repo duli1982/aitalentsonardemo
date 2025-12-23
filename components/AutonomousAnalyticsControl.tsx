@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Activity, AlertCircle, BarChart3, Clock, Pause, Play, RefreshCw, TrendingDown, TrendingUp } from 'lucide-react';
 import { autonomousAnalyticsAgent, PipelineSnapshot, AnalyticsAlert } from '../services/AutonomousAnalyticsAgent';
 import { useData } from '../contexts/DataContext';
+import { agentSettingsService } from '../services/AgentSettingsService';
 
 interface AutonomousAnalyticsControlProps {
     jobs: any[];
@@ -50,7 +51,8 @@ const AutonomousAnalyticsControl: React.FC<AutonomousAnalyticsControlProps> = ({
     const [alerts, setAlerts] = useState<AnalyticsAlert[]>([]);
 
     useEffect(() => {
-        autonomousAnalyticsAgent.initialize(jobs, allCandidates);
+        const settings = agentSettingsService.getAgent('analytics');
+        autonomousAnalyticsAgent.initialize(jobs, allCandidates, { enabled: settings.enabled, mode: settings.mode });
         refresh();
 
         const interval = setInterval(refresh, 30000);
@@ -76,6 +78,7 @@ const AutonomousAnalyticsControl: React.FC<AutonomousAnalyticsControlProps> = ({
 
     const handleToggle = () => {
         const enabled = !status?.enabled;
+        agentSettingsService.setEnabled('analytics', enabled);
         autonomousAnalyticsAgent.setEnabled(enabled);
         setTimeout(refresh, 100);
     };
@@ -251,4 +254,3 @@ const AutonomousAnalyticsControl: React.FC<AutonomousAnalyticsControlProps> = ({
 };
 
 export default AutonomousAnalyticsControl;
-

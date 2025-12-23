@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Mail, Loader2, Copy, Check, Send } from 'lucide-react';
 import type { Candidate, Job } from '../../types';
 import * as geminiService from '../../services/geminiService';
+import { useToast } from '../../contexts/ToastContext';
 
 interface BulkOutreachModalProps {
     isOpen: boolean;
@@ -18,6 +19,7 @@ interface OutreachMessage {
 }
 
 const BulkOutreachModal: React.FC<BulkOutreachModalProps> = ({ isOpen, onClose, candidates, job }) => {
+    const { showToast } = useToast();
     const [messages, setMessages] = useState<OutreachMessage[]>([]);
     const [isGenerating, setIsGenerating] = useState(false);
     const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -168,7 +170,7 @@ const BulkOutreachModal: React.FC<BulkOutreachModalProps> = ({ isOpen, onClose, 
                         </button>
                         <button
                             onClick={() => {
-                                alert(`Simulated: ${messages.length} messages sent!`);
+                                showToast(`Simulated: ${messages.length} messages sent.`, 'success');
                                 onClose();
                             }}
                             disabled={isGenerating}

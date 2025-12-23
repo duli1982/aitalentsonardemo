@@ -1,14 +1,13 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import type { Candidate, Job } from '../types';
-import GraphExplorer from './GraphExplorer';
 import SkillsPassport from './SkillsPassport';
-import { skillsInferenceService } from '../services/SkillsInferenceService';
 import { Users, UserCheck, UploadCloud, Loader2, Diamond, TrendingUp, MessageSquare, Briefcase, ThumbsUp, ThumbsDown, Sparkles, Zap, Trophy, ArrowRight, Microscope, Building2, Clock, Globe, FileText, CheckCircle, Search, Mail, Phone, MapPin, Calendar, Download, ExternalLink, ChevronDown, ChevronUp, Play, Award, X, Database, RefreshCw, Filter, GraduationCap, Star, PlusCircle } from 'lucide-react';
 import { useData } from '../contexts/DataContext';
 import { useSupabaseCandidates } from '../hooks/useSupabaseCandidates';
 import { decisionArtifactService } from '../services/DecisionArtifactService';
 import { pipelineEventService } from '../services/PipelineEventService';
 import { fitAnalysisService } from '../services/FitAnalysisService';
+import RecordAssessmentModal from './modals/RecordAssessmentModal';
 
 interface CandidatePaneProps {
   job: Job | null;
@@ -73,9 +72,10 @@ const CandidateCard: React.FC<{
   onFeedback: (candidateId: string, jobId: string, feedback: 'positive' | 'negative') => void;
   onAddToPipeline: (candidate: Candidate, jobId: string) => void;
   onViewProfile?: (candidate: Candidate) => void;
+  onRecordAssessment?: (candidate: Candidate) => void;
   isLoading: boolean;
   loadingCandidateId: string | null;
-}> = ({ candidate, job, onSelect, onInitiateAnalysis, onFeedback, onAddToPipeline, onViewProfile, isLoading, loadingCandidateId }) => {
+}> = ({ candidate, job, onSelect, onInitiateAnalysis, onFeedback, onAddToPipeline, onViewProfile, onRecordAssessment, isLoading, loadingCandidateId }) => {
   const isCurrentCardLoading = isLoading && loadingCandidateId === candidate.id;
   const matchScore = candidate.matchScores?.[job.id];
   const matchRationale = candidate.matchRationales?.[job.id];
@@ -238,7 +238,7 @@ const CandidateCard: React.FC<{
       </div>
 
       {/* Action Buttons */}
-      <div className="mt-auto grid grid-cols-5 gap-2">
+      <div className="mt-auto grid grid-cols-6 gap-2">
         <button
           onClick={(e) => { e.stopPropagation(); onInitiateAnalysis('FIT_ANALYSIS', candidate); }}
           disabled={isCurrentCardLoading}
@@ -268,6 +268,14 @@ const CandidateCard: React.FC<{
           <Mail className="h-4 w-4" />
         </button>
         <button
+          onClick={(e) => { e.stopPropagation(); onRecordAssessment?.(candidate); }}
+          disabled={isCurrentCardLoading || !onRecordAssessment}
+          className="bg-slate-700 hover:bg-slate-600 text-gray-300 hover:text-white border border-slate-600 rounded-lg flex items-center justify-center transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Record assessment result (creates a reviewable proposal)"
+        >
+          <Award className="h-4 w-4" />
+        </button>
+        <button
           onClick={(e) => { e.stopPropagation(); onViewProfile?.(candidate); }}
           className="bg-slate-700 hover:bg-slate-600 text-gray-300 hover:text-white border border-slate-600 rounded-lg flex items-center justify-center transition-all"
           title="View Full Profile"
@@ -287,6 +295,8 @@ const CandidatePane: React.FC<CandidatePaneProps> = ({ job, onInitiateAnalysis, 
   const [drawerTab, setDrawerTab] = useState<'summary' | 'pipeline'>('summary');
   const [showFilters, setShowFilters] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
+  const [assessmentOpen, setAssessmentOpen] = useState(false);
+  const [assessmentCandidate, setAssessmentCandidate] = useState<Candidate | null>(null);
 
   useEffect(() => {
     setSelectedCandidate(null);
@@ -766,6 +776,10 @@ const CandidatePane: React.FC<CandidatePaneProps> = ({ job, onInitiateAnalysis, 
                     onFeedback={onFeedback}
                     onAddToPipeline={onAddToPipeline}
                     onViewProfile={onViewProfile}
+                    onRecordAssessment={(c) => {
+                      setAssessmentCandidate(c);
+                      setAssessmentOpen(true);
+                    }}
                     isLoading={isLoading}
                     loadingCandidateId={loadingCandidateId}
                   />
@@ -900,6 +914,16 @@ const CandidatePane: React.FC<CandidatePaneProps> = ({ job, onInitiateAnalysis, 
           )}
         </div>
       </div>
+
+      <RecordAssessmentModal
+        isOpen={assessmentOpen}
+        onClose={() => {
+          setAssessmentOpen(false);
+          setAssessmentCandidate(null);
+        }}
+        candidate={assessmentCandidate}
+        job={job}
+      />
     </div>
   );
 };

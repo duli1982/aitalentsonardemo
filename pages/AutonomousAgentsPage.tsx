@@ -24,8 +24,8 @@ const AutonomousAgentsPage: React.FC = () => {
                         </h1>
                     </div>
                     <p className="text-slate-400 ml-14">
-                        Background workers that continuously monitor and act on your behalf. These agents run 24/7, finding candidates,
-                        scheduling interviews, and more - without your intervention.
+                        Background workers that monitor and assist while the app is open. Agents are recommend-only by default and surface
+                        proposals in Pulse and the Agent Inbox for you to review before applying.
                     </p>
                 </div>
 

@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Brain, Briefcase, GitBranch, Users, Building2, TrendingUp, Bot, Map, Shield, LayoutGrid, Bell, Menu, X, BarChart2, Sparkles } from 'lucide-react';
+import { Brain, Briefcase, GitBranch, Users, Building2, TrendingUp, Bot, Inbox, Map, Shield, LayoutGrid, Bell, Menu, X, BarChart2, Sparkles } from 'lucide-react';
 import PulseFeed from './PulseFeed';
 import { pulseService } from '../services/PulseService';
 import { AppView } from '../types';
+import AgentStatusIndicator from './AgentStatusIndicator';
 
 interface HeaderProps {
     activeView: AppView;
@@ -41,6 +42,7 @@ const NAV_GROUPS: { name: string; items: NavItem[] }[] = [
         items: [
             { id: 'agents', icon: <Bot size={18} />, label: 'Agents', color: 'emerald' },
             { id: 'autonomous-agents', icon: <Bot size={18} />, label: 'Autonomous', color: 'emerald' },
+            { id: 'agent-inbox', icon: <Inbox size={18} />, label: 'Inbox', color: 'emerald' },
             { id: 'governance', icon: <Shield size={18} />, label: 'Governance', color: 'emerald' },
             { id: 'war-room', icon: <LayoutGrid size={18} />, label: 'War Room', color: 'pink' },
         ]
@@ -104,12 +106,12 @@ const Header: React.FC<HeaderProps> = ({ activeView, onViewChange, onOpenSmartSe
                     ))}
 
                     {/* Pulse Bell */}
-                    <button
-                        onClick={() => setIsPulseOpen(!isPulseOpen)}
-                        title="Talent Pulse"
-                        aria-label={`Notifications${pulseService.getUnreadCount() > 0 ? ` (${pulseService.getUnreadCount()} unread)` : ''}`}
-                        className={`p-2 rounded-full transition-colors relative ${isPulseOpen ? 'text-sky-400' : 'text-slate-400 hover:text-white'}`}
-                    >
+	                    <button
+	                        onClick={() => setIsPulseOpen(!isPulseOpen)}
+	                        title="Talent Pulse"
+	                        aria-label={`Notifications${pulseService.getUnreadCount() > 0 ? ` (${pulseService.getUnreadCount()} unread)` : ''}`}
+	                        className={`p-2 rounded-full transition-colors relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 ${isPulseOpen ? 'text-sky-400' : 'text-slate-400 hover:text-white'}`}
+	                    >
                         <Bell size={18} aria-hidden="true" />
                         {pulseService.getUnreadCount() > 0 && (
                             <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse border border-slate-900" aria-hidden="true"></span>
@@ -119,6 +121,8 @@ const Header: React.FC<HeaderProps> = ({ activeView, onViewChange, onOpenSmartSe
 
                 {/* Right side buttons */}
                 <div className="flex items-center space-x-2">
+                    <AgentStatusIndicator onOpenAutonomousAgents={() => onViewChange('autonomous-agents')} />
+
                     {/* Smart Search Button */}
                     {onOpenSmartSearch && (
                         <button
@@ -146,11 +150,12 @@ const Header: React.FC<HeaderProps> = ({ activeView, onViewChange, onOpenSmartSe
                     )}
 
                     {/* Mobile Pulse Bell */}
-                    <button
-                        onClick={() => setIsPulseOpen(!isPulseOpen)}
-                        className="lg:hidden p-2 rounded-full text-slate-400 hover:text-white relative"
-                        aria-label="Notifications"
-                    >
+	                    <button
+	                        onClick={() => setIsPulseOpen(!isPulseOpen)}
+	                        className="lg:hidden p-2 rounded-full text-slate-400 hover:text-white relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
+	                        aria-label="Notifications"
+	                        type="button"
+	                    >
                         <Bell size={20} aria-hidden="true" />
                         {pulseService.getUnreadCount() > 0 && (
                             <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>

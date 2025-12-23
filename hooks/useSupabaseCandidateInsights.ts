@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../services/supabaseClient';
 import type { DepartmentInsight } from '../types';
+import { degradedModeService } from '../services/DegradedModeService';
+import { upstream } from '../services/errorHandling';
 
 export interface SupabaseCandidateInsightsOptions {
     enabled?: boolean;
@@ -66,9 +68,15 @@ export const useSupabaseCandidateInsights = (options: SupabaseCandidateInsightsO
         setError(null);
 
         try {
-            const { count, error: countError } = await supabase
-                .from('candidate_documents')
+            // Prefer candidates table (system-of-record) for stable, indexed reads.
+            // Fallback to candidate_documents metadata for older setups.
+            const countAttempt = await supabase
+                .from('candidates')
                 .select('id', { count: 'exact', head: true });
+
+            const { count, error: countError } = countAttempt.error
+                ? await supabase.from('candidate_documents').select('id', { count: 'exact', head: true })
+                : countAttempt;
 
             if (countError) throw countError;
             const total = count || 0;
@@ -78,10 +86,14 @@ export const useSupabaseCandidateInsights = (options: SupabaseCandidateInsightsO
             let offset = 0;
 
             while (offset < total) {
-                const { data, error: pageError } = await supabase
-                    .from('candidate_documents')
-                    .select('id, metadata')
+                const pageAttempt = await supabase
+                    .from('candidates')
+                    .select('id, metadata, skills')
                     .range(offset, Math.min(offset + pageSize, total) - 1);
+
+                const { data, error: pageError } = pageAttempt.error
+                    ? await supabase.from('candidate_documents').select('id, metadata').range(offset, Math.min(offset + pageSize, total) - 1)
+                    : pageAttempt;
 
                 if (pageError) throw pageError;
                 if (!data || data.length === 0) break;
@@ -93,13 +105,14 @@ export const useSupabaseCandidateInsights = (options: SupabaseCandidateInsightsO
                         metadata.industry ||
                         'Unknown';
 
-                    const skills: unknown = metadata.skills;
-                    if (!Array.isArray(skills) || skills.length === 0) continue;
+                    const skills: unknown = row?.skills ?? metadata.skills;
+                    const skillList = Array.isArray(skills) ? skills : [];
+                    if (skillList.length === 0) continue;
 
                     if (!counts.has(department)) counts.set(department, new Map());
                     const skillCounts = counts.get(department)!;
 
-                    for (const rawSkill of skills) {
+                    for (const rawSkill of skillList) {
                         const skill = String(rawSkill || '').trim();
                         if (!skill) continue;
                         skillCounts.set(skill, (skillCounts.get(skill) || 0) + 1);
@@ -125,6 +138,12 @@ export const useSupabaseCandidateInsights = (options: SupabaseCandidateInsightsO
                 // ignore cache failures
             }
         } catch (err) {
+            degradedModeService.report({
+                feature: 'supabase_candidate_insights',
+                error: upstream('useSupabaseCandidateInsights', 'Failed to compute insights.', err),
+                lastUpdatedAt: new Date().toISOString(),
+                whatMightBeMissing: 'Insights may be stale or unavailable.'
+            });
             setError(err instanceof Error ? err : new Error('Failed to build Supabase candidate insights'));
             setInsights([]);
             setTotalCandidates(0);
@@ -155,4 +174,3 @@ export const useSupabaseCandidateInsights = (options: SupabaseCandidateInsightsO
 
     return { insights, isLoading, error, totalCandidates, refresh };
 };
-

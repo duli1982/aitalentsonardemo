@@ -1,6 +1,12 @@
 export type AlertSeverity = 'CRITICAL' | 'WARNING' | 'INFO' | 'OPPORTUNITY';
 export type AlertType = 'ATTRITION_RISK' | 'MARKET_SIGNAL' | 'COMPETITOR_MOVE' | 'INTERNAL_MOBILITY';
 
+export interface PulseEntityRef {
+    candidateId?: string;
+    jobId?: string;
+    stage?: string;
+}
+
 export interface PulseAlert {
     id: string;
     type: AlertType;
@@ -9,6 +15,7 @@ export interface PulseAlert {
     message: string;
     timestamp: string;
     entityId?: string; // e.g., Candidate ID or Job ID
+    entityRef?: PulseEntityRef;
     actionLink?: string; // Where does this take you?
     isRead: boolean;
 }

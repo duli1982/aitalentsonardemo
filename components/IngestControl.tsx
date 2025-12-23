@@ -68,16 +68,40 @@ const IngestControl: React.FC = () => {
                 // 2. Generate Embedding
                 const embeddingRes = await aiService.embedText(c.summary);
                 if (!embeddingRes.success || !embeddingRes.data) {
-                    addLog(`Failed to embed ${c.name}: ${embeddingRes.error}`);
+                    addLog(`Failed to embed ${c.name}: ${embeddingRes.error.message}`);
                     continue;
                 }
 
                 // 3. Upload to Supabase
+                const candidateId = (globalThis as any)?.crypto?.randomUUID?.() ?? crypto.randomUUID();
+                const metadata = { id: candidateId, role: c.role, name: c.name, type: 'uploaded', source: 'demo_ingest' };
+
+                // Best-effort: populate candidates + active document if the new schema is deployed.
+                try {
+                    const { candidatePersistenceService } = await import('../services/CandidatePersistenceService');
+                    await candidatePersistenceService.upsertCandidateAndActiveDocument({
+                        candidateId,
+                        fullName: c.name,
+                        title: c.role,
+                        skills: [],
+                        candidateMetadata: metadata,
+                        documentContent: `${c.name} - ${c.role}. ${c.summary}`,
+                        documentMetadata: metadata,
+                        embedding: embeddingRes.data,
+                        source: 'demo_ingest'
+                    });
+                    successCount++;
+                    setCount(successCount);
+                    continue;
+                } catch {
+                    // Fallback to legacy insert below.
+                }
+
                 const { error } = await supabase
                     .from('candidate_documents')
                     .insert({
                         content: `${c.name} - ${c.role}. ${c.summary}`,
-                        metadata: { role: c.role, name: c.name },
+                        metadata,
                         embedding: embeddingRes.data
                     });
 

@@ -41,6 +41,5 @@ export const useAgentGateway = () => useServices().agent;
 export const useAuditService = () => useServices().audit;
 export const useCareerPathService = () => useServices().career;
 export const useForecastService = () => useServices().forecast;
-export const useFairnessEngine = () => useServices().fairness;
 export const useIngestionService = () => useServices().ingestion;
 export const useOrgTwinService = () => useServices().orgTwin;

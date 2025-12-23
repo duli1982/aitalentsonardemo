@@ -5,6 +5,7 @@ import { useData } from '../contexts/DataContext';
 import { supabase } from '../services/supabaseClient';
 import { autonomousSchedulingAgent, type ScheduledInterview } from '../services/AutonomousSchedulingAgent';
 import { autonomousInterviewAgent, type InterviewSession } from '../services/AutonomousInterviewAgent';
+import { agentSettingsService } from '../services/AgentSettingsService';
 
 interface AutonomousInterviewControlProps {
     jobs: Job[];
@@ -31,26 +32,37 @@ const formatNextRun = (date: Date | null) => {
 const resolveSupabaseCandidateById = async (id: string): Promise<Candidate | null> => {
     if (!supabase) return null;
     try {
-        const { data, error } = await supabase
-            .from('candidate_documents')
-            .select('id, metadata, content')
-            .eq('id', id)
+        // Prefer system-of-record view (candidate_id is the stable identifier used across the app).
+        const viewAttempt = await supabase
+            .from('candidate_documents_view')
+            .select('candidate_id, name, email, title, location, experience_years, skills, content, document_metadata')
+            .eq('candidate_id', id)
             .maybeSingle();
 
+        const legacyAttempt = viewAttempt.error
+            ? await supabase
+                .from('candidate_documents')
+                .select('id, metadata, content')
+                .eq('metadata->>id', id)
+                .maybeSingle()
+            : null;
+
+        const { data, error } = viewAttempt.error ? (legacyAttempt as any) : (viewAttempt as any);
+
         if (error || !data) return null;
-        const metadata = (data as any).metadata || {};
+        const metadata = ((data as any).document_metadata || (data as any).metadata) || {};
         const content = typeof (data as any).content === 'string' ? (data as any).content : '';
         const nameFromContent = content.includes(' - ') ? content.split(' - ')[0].trim() : '';
 
         return {
-            id: String((data as any).id),
-            name: metadata.name || metadata.full_name || nameFromContent || 'Unknown',
-            email: metadata.email || '',
-            role: metadata.role || metadata.title || 'Candidate',
+            id: String((data as any).candidate_id ?? metadata.id ?? (data as any).id),
+            name: (data as any).name || metadata.name || metadata.full_name || nameFromContent || 'Unknown',
+            email: (data as any).email || metadata.email || '',
+            role: (data as any).title || metadata.role || metadata.title || 'Candidate',
             type: 'uploaded' as const,
-            skills: Array.isArray(metadata.skills) ? metadata.skills : [],
-            location: metadata.location || '',
-            experience: metadata.experience || 0,
+            skills: Array.isArray((data as any).skills) ? (data as any).skills : Array.isArray(metadata.skills) ? metadata.skills : [],
+            location: (data as any).location || metadata.location || '',
+            experience: (data as any).experience_years || metadata.experience || 0,
             availability: metadata.availability || '',
             matchScores: {},
             feedback: {}
@@ -83,8 +95,10 @@ const AutonomousInterviewControl: React.FC<AutonomousInterviewControlProps> = ({
     }, [activeSessionId, status]);
 
     useEffect(() => {
-        autonomousSchedulingAgent.initialize();
-        autonomousInterviewAgent.initialize();
+        const scheduling = agentSettingsService.getAgent('scheduling');
+        const interview = agentSettingsService.getAgent('interview');
+        autonomousSchedulingAgent.initialize({ enabled: scheduling.enabled, mode: scheduling.mode });
+        autonomousInterviewAgent.initialize({ enabled: interview.enabled, mode: interview.mode });
 
         const refresh = () => setStatus({
             interview: autonomousInterviewAgent.getStatus(),
@@ -97,6 +111,7 @@ const AutonomousInterviewControl: React.FC<AutonomousInterviewControlProps> = ({
 
     const toggleAgent = () => {
         const enabled = !!status?.interview?.enabled;
+        agentSettingsService.setEnabled('interview', !enabled);
         autonomousInterviewAgent.setEnabled(!enabled);
         setTimeout(() => setStatus({
             interview: autonomousInterviewAgent.getStatus(),
@@ -531,4 +546,3 @@ const AutonomousInterviewControl: React.FC<AutonomousInterviewControlProps> = ({
 };
 
 export default AutonomousInterviewControl;
-

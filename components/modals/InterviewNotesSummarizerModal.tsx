@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, FileText, Loader2, CheckCircle, AlertCircle, TrendingUp, MessageSquare, ArrowRight } from 'lucide-react';
 import type { Candidate, Job } from '../../types';
 import * as geminiService from '../../services/geminiService';
+import { useToast } from '../../contexts/ToastContext';
 
 interface InterviewNotesSummarizerModalProps {
     isOpen: boolean;
@@ -15,10 +16,11 @@ const InterviewNotesSummarizerModal: React.FC<InterviewNotesSummarizerModalProps
     const [interviewer, setInterviewer] = useState('');
     const [summary, setSummary] = useState<geminiService.InterviewSummary | null>(null);
     const [isSummarizing, setIsSummarizing] = useState(false);
+    const { showToast } = useToast();
 
     const handleSummarize = async () => {
         if (!rawNotes.trim() || !interviewer.trim()) {
-            alert('Please enter interview notes and interviewer name');
+            showToast('Enter interview notes and the interviewer name.', 'warning');
             return;
         }
 
@@ -33,7 +35,7 @@ const InterviewNotesSummarizerModal: React.FC<InterviewNotesSummarizerModalProps
             setSummary(result);
         } catch (error) {
             console.error('Error summarizing notes:', error);
-            alert('Failed to summarize notes. Please try again.');
+            showToast('Failed to summarize notes. Please try again.', 'error');
         } finally {
             setIsSummarizing(false);
         }
@@ -280,7 +282,7 @@ const InterviewNotesSummarizerModal: React.FC<InterviewNotesSummarizerModalProps
                         {summary && (
                             <button
                                 onClick={() => {
-                                    alert('Interview summary saved to candidate profile!');
+                                    showToast('Interview summary saved to candidate profile.', 'success');
                                     onClose();
                                 }}
                                 className="px-6 py-2.5 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white font-semibold rounded-lg transition-all flex items-center gap-2"

@@ -35,7 +35,7 @@ This allows you to search for **"Someone who has led large frontend teams"**, an
 
 ## 3. The Setup (Step-by-Step)
 
-You don't need a new account. Go to your existing project's **SQL Editor** and run these 3 commands.
+You don't need a new account. Go to your existing project's **SQL Editor** and run these steps.
 
 ### Step 0: Start a Project (If you haven't already)
 1.  Go to [database.new](https://database.new) and sign in with GitHub.
@@ -51,67 +51,74 @@ This turns your standard Postgres DB into a Vector DB.
 create extension if not exists vector;
 ```
 
-### Step 2: Create the "Knowledge Graph" Table
-We create a table that holds the normal text *AND* the vector implementation.
+### Step 2: Create the System-of-Record Schema (Recommended)
+Talent Sonar uses a **trust-first** architecture:
+- `candidates` is the canonical system-of-record (stable UI contract: name, location, skills, etc.)
+- `candidate_documents` stores **versioned** vector + text snapshots (multiple CVs per candidate)
+- `candidate_documents_view` joins candidates → active document (canonical read model)
+- `match_candidates()` searches **active documents by default**, with an optional `include_historical`
+
+In Supabase SQL Editor, run the repo script:
+
 ```sql
-create table candidate_documents (
-  id bigserial primary key,
-  content text,                    -- The raw text (e.g., resume summary)
-  metadata jsonb,                  -- Extra info (candidate_id, skills, tags)
-  embedding vector(768)            -- The vector! (768 dimensions is standard for Google/Gemini models)
-);
+-- paste the contents of:
+-- sql/CANDIDATES_SYSTEM_OF_RECORD_SETUP.sql
 ```
 
-### Step 3: Create the "Match" Function
-This is the magic function your UI will call to find candidates using AI.
-```sql
-create or replace function match_candidates (
-  query_embedding vector(768),
-  match_threshold float,
-  match_count int
-)
-returns table (
-  id bigint,
-  content text,
-  metadata jsonb,
-  similarity float
-)
-language plpgsql
-as $$
-begin
-  return query
-  select
-    candidate_documents.id,
-    candidate_documents.content,
-    candidate_documents.metadata,
-    1 - (candidate_documents.embedding <=> query_embedding) as similarity
-  from candidate_documents
-  where 1 - (candidate_documents.embedding <=> query_embedding) > match_threshold
-  order by candidate_documents.embedding <=> query_embedding
-  limit match_count;
-end;
-$$;
+This script creates/updates all required objects, including `match_candidates()`.
 
 ### Step 4: Verify it Works (Manual Test)
 Run this to confirm your vector database is active.
 
-1. **Insert a dummy candidate:**
+1. **Insert a dummy candidate + active document:**
    *(Note: We use `array_fill` to generate a fake 768-dimension vector solely for testing.)*
    ```sql
-   INSERT INTO candidate_documents (content, metadata, embedding)
-   VALUES (
-     'Alice - React Expert',
-     '{"role": "frontend"}',
-     array_fill(0.1, array[768])::vector(768)
-   );
+   with inserted_candidate as (
+     insert into public.candidates (full_name, email, location, skills, metadata)
+     values ('Alice Example', 'alice@example.com', 'Remote', array['React'], '{"source":"manual_test"}'::jsonb)
+     returning id
+   ), inserted_doc as (
+     insert into public.candidate_documents (candidate_id, content, metadata, embedding, is_active, source)
+     select
+       id,
+       'Alice Example - React Expert',
+       '{"title":"Frontend","skills":["React"],"id":"' || id || '"}'::jsonb,
+       array_fill(0.1, array[768])::vector(768),
+       true,
+       'manual_test'
+     from inserted_candidate
+     returning id, candidate_id
+   )
+   update public.candidates c
+   set active_document_id = d.id
+   from inserted_doc d
+   where c.id = d.candidate_id;
    ```
 
-2. **Run a search:**
+2. **Verify the canonical read model:**
+   ```sql
+   select candidate_id, name, email, title, skills
+   from public.candidate_documents_view
+   order by candidate_updated_at desc
+   limit 5;
+   ```
+
+3. **Run a semantic search (active docs only by default):**
    ```sql
    select * from match_candidates(
      array_fill(0.1, array[768])::vector(768), -- Query: exact match
      0.8,                                       -- Threshold
      5                                          -- Limit
+   );
+   ```
+
+4. **Optional: include historical documents (forensics):**
+   ```sql
+   select * from match_candidates(
+     array_fill(0.1, array[768])::vector(768),
+     0.8,
+     5,
+     true -- include_historical
    );
    ```
    *Result:* You should see Alice!
@@ -122,22 +129,33 @@ Run this to confirm your vector database is active.
 
 ## 4. The Workflow (How it runs in code)
 
-Now that the DB is ready, here is how the App (Next.js) talks to it.
+Now that the DB is ready, here is how the app talks to it.
 
 **When Uploading a Candidate:**
 1.  **App**: Takes the Resume PDF.
 2.  **App**: Extracts text ("Alice is a React expert...").
 3.  **AI (Gemini)**: "Convert this text to numbers." -> Returns `[0.1, 0.5, ...]`.
-4.  **Supabase**: `INSERT INTO candidate_documents (content, embedding) VALUES ('Alice...', '[0.1, 0.5, ...]')`.
+4.  **Supabase**:
+    - Upsert canonical row in `candidates`
+    - Insert a new snapshot into `candidate_documents` and set it active (audit trail preserved)
 
 **When Searching (The "Sourcing Agent"):**
 1.  **User**: "Find me strong frontend leads."
 2.  **AI (Gemini)**: Converts that *question* into numbers `[0.2, 0.4, ...]`.
-3.  **Supabase**: `rpc('match_candidates', '[0.2, 0.4, ...]')`.
-4.  **Result**: Returns Alice (because her vector is mathematically close to the question's vector).
+3.  **Supabase**: `rpc('match_candidates', { query_embedding, match_threshold, match_count })`.
+4.  **Result**: Returns the best matching candidates (active document by default), with stable candidate fields.
 
 ---
 
 ## summary
 
 You effectively get **Google-quality semantic search** for free, using the tools you already have. This is the foundation of the "Knowledge Graph" mentioned in the Vision 2030 document.
+
+---
+
+## Optional: Fairness (Aggregate, Pipeline Cohorts)
+
+If you want enterprise-safe fairness reporting (aggregate-only by job + stage + time window):
+- Run `sql/PIPELINE_SYSTEM_OF_TRUTH_SETUP.sql` (pipeline events)
+- Run `sql/FAIRNESS_DEMOGRAPHICS_SETUP.sql` (private `candidate_demographics` + RPC report)
+- Populate demographics only from **HRIS/ATS/self-report** (no inference)

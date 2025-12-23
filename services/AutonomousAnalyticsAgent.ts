@@ -7,6 +7,7 @@ import { backgroundJobService } from './BackgroundJobService';
 import { pulseService } from './PulseService';
 import { supabase } from './supabaseClient';
 import { aiService } from './AIService';
+import type { AgentMode } from './AgentSettingsService';
 
 export type AnalyticsAlertSeverity = 'info' | 'warning' | 'error';
 
@@ -91,15 +92,17 @@ function countByStageOverall(candidates: any[], jobs: any[]): { total: number; s
 class AutonomousAnalyticsAgent {
     private jobId: string | null = null;
     private isInitialized = false;
+    private mode: AgentMode = 'recommend';
 
-    initialize(jobs: any[], candidates: any[]) {
+    initialize(jobs: any[], candidates: any[], options?: { enabled?: boolean; mode?: AgentMode }) {
         if (this.isInitialized) return;
+        this.mode = options?.mode ?? 'recommend';
 
         this.jobId = backgroundJobService.registerJob({
             name: 'Autonomous Pipeline Analytics',
             type: 'MONITORING',
             interval: 30 * 60 * 1000, // 30 minutes
-            enabled: true,
+            enabled: options?.enabled ?? false,
             handler: async () => {
                 await this.runAnalysis(jobs, candidates);
             }
@@ -112,6 +115,10 @@ class AutonomousAnalyticsAgent {
     setEnabled(enabled: boolean) {
         if (!this.jobId) return;
         backgroundJobService.setJobEnabled(this.jobId, enabled);
+    }
+
+    setMode(mode: AgentMode) {
+        this.mode = mode;
     }
 
     getStatus() {

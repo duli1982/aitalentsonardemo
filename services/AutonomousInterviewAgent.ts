@@ -18,6 +18,7 @@ import { pipelineEventService } from './PipelineEventService';
 import { processingMarkerService } from './ProcessingMarkerService';
 import { decisionArtifactService } from './DecisionArtifactService';
 import { interviewSessionPersistenceService } from './InterviewSessionPersistenceService';
+import type { AgentMode } from './AgentSettingsService';
 
 export interface InterviewTranscriptLine {
     id: string;
@@ -55,22 +56,24 @@ class AutonomousInterviewAgent {
     private jobId: string | null = null;
     private isInitialized = false;
     private sessions: InterviewSession[] = [];
+    private mode: AgentMode = 'recommend';
 
     private readonly sessionsKey = 'autonomous_interview_sessions_v1';
     private readonly maxSessions = 200;
 
-    initialize() {
+    initialize(options?: { enabled?: boolean; mode?: AgentMode }) {
         if (this.isInitialized) {
             return;
         }
 
         this.loadPersistedSessions();
+        this.mode = options?.mode ?? 'recommend';
 
         this.jobId = backgroundJobService.registerJob({
             name: 'Autonomous Interview Agent',
             type: 'MONITORING',
             interval: 60 * 60 * 1000, // 1 hour
-            enabled: true,
+            enabled: options?.enabled ?? false,
             handler: async () => {
                 // In a real implementation, this would monitor calendar events and ensure the agent is ready.
                 // Keep as a heartbeat.
@@ -84,6 +87,10 @@ class AutonomousInterviewAgent {
         });
 
         this.isInitialized = true;
+    }
+
+    setMode(mode: AgentMode) {
+        this.mode = mode;
     }
 
     startSession(params: {

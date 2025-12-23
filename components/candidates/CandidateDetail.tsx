@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+﻿import React, { useMemo, useState, useEffect, useRef } from 'react';
 import type { Candidate, Job, InternalCandidate, UploadedCandidate, PipelineStage } from '../../types';
 import { Briefcase, MapPin, FileText, TrendingUp, ChevronRight, User, Calendar, Tag, RefreshCw, Flame, Thermometer, Snowflake, GraduationCap, ClipboardList, Mail, BadgeCheck, BadgeX, X, MoreHorizontal } from 'lucide-react';
 import ScheduleInterviewModal from '../modals/ScheduleInterviewModal';
@@ -16,6 +16,7 @@ import { recruitingScorecardService, type RecruitingScorecardRecord } from '../.
 import { determineNextAction, type NextActionSuggestion } from '../../services/NextActionService';
 import { schedulingPersistenceService, type ScheduledInterviewRecord } from '../../services/SchedulingPersistenceService';
 import { interviewSessionPersistenceService, type InterviewSessionRecord } from '../../services/InterviewSessionPersistenceService';
+import RecommendationScorecardPanel from './RecommendationScorecardPanel';
 
 interface CandidateDetailProps {
     candidate: Candidate | undefined;
@@ -305,7 +306,7 @@ const CandidateDetail: React.FC<CandidateDetailProps> = ({ candidate, jobs, onIn
                 const candidateText = buildCandidateEmbeddingText(candidate);
                 const candidateEmbeddingResult = await aiService.embedText(candidateText);
                 if (!candidateEmbeddingResult.success || !candidateEmbeddingResult.data) {
-                    throw new Error(candidateEmbeddingResult.error || 'Failed to generate candidate embedding');
+                    throw new Error(candidateEmbeddingResult.error.message || 'Failed to generate candidate embedding');
                 }
 
                 const updatedScores: Record<string, number> = { ...cachedScores };
@@ -776,19 +777,19 @@ const CandidateDetail: React.FC<CandidateDetailProps> = ({ candidate, jobs, onIn
 	                case 'add_pipeline':
 	                    if (onAddToPipeline) {
 	                        await onAddToPipeline(candidate, job.id, 'long_list');
-	                    } else {
-	                        await pipelineEventService.logEvent({
-	                            candidateId: String(candidate.id),
-	                            candidateName: candidate.name,
-	                            jobId: job.id,
-	                            jobTitle: job.title,
-	                            eventType: 'STAGE_MOVED',
-	                            actorType: 'user',
-	                            fromStage: (candidate as any).pipelineStage?.[job.id] || 'new',
-	                            toStage: 'long_list',
-	                            summary: `Candidate added to Long List for ${job.title}.`
-	                        });
 	                    }
+
+	                    await pipelineEventService.logEvent({
+	                        candidateId: String(candidate.id),
+	                        candidateName: candidate.name,
+	                        jobId: job.id,
+	                        jobTitle: job.title,
+	                        eventType: 'STAGE_MOVED',
+	                        actorType: 'user',
+	                        fromStage: (candidate as any).pipelineStage?.[job.id] || 'new',
+	                        toStage: 'long_list',
+	                        summary: `Candidate added to Long List for ${job.title}.`
+	                    });
 	                    break;
 	                case 'request_screening': {
 	                    const alreadyInPipeline = Boolean((candidate as any)?.pipelineStage?.[job.id]);
@@ -796,6 +797,18 @@ const CandidateDetail: React.FC<CandidateDetailProps> = ({ candidate, jobs, onIn
 	                        await onAddToPipeline(candidate, job.id, 'long_list');
 	                    }
 	                    onUpdateCandidateStage?.(String(candidate.id), job.id, 'screening');
+
+	                    await pipelineEventService.logEvent({
+	                        candidateId: String(candidate.id),
+	                        candidateName: candidate.name,
+	                        jobId: job.id,
+	                        jobTitle: job.title,
+	                        eventType: 'STAGE_MOVED',
+	                        actorType: 'user',
+	                        fromStage: 'long_list',
+	                        toStage: 'screening',
+	                        summary: `Moved to Screening for ${job.title}.`
+	                    });
 
 	                    autonomousScreeningAgent.requestScreening({
 	                        candidateId: String(candidate.id),
@@ -964,7 +977,7 @@ const CandidateDetail: React.FC<CandidateDetailProps> = ({ candidate, jobs, onIn
                         </span>
                         {engagementLoading && !engagementScore && (
                             <span className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide border border-slate-600 text-slate-300">
-                                Engagement…
+                                Engagementâ€¦
                             </span>
                         )}
                         {engagementScore && (
@@ -1029,7 +1042,7 @@ const CandidateDetail: React.FC<CandidateDetailProps> = ({ candidate, jobs, onIn
                                     className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 disabled:opacity-60"
                                     title="Recompute estimated engagement"
                                 >
-                                    {engagementLoading ? 'Refreshing…' : 'Refresh'}
+                                    {engagementLoading ? 'Refreshingâ€¦' : 'Refresh'}
                                 </button>
                             </div>
 
@@ -1060,7 +1073,7 @@ const CandidateDetail: React.FC<CandidateDetailProps> = ({ candidate, jobs, onIn
                                     <ul className="space-y-1">
                                         {engagementScore.insights.map((insight, index) => (
                                             <li key={index} className="text-sm text-gray-400 flex items-start gap-2">
-                                                <span className="text-sky-400">•</span>
+                                                <span className="text-sky-400">â€¢</span>
                                                 {insight}
                                             </li>
                                         ))}
@@ -1070,7 +1083,7 @@ const CandidateDetail: React.FC<CandidateDetailProps> = ({ candidate, jobs, onIn
                                 {/* Recommendation */}
                                 <div className="bg-slate-800/50 rounded-lg p-3">
                                     <p className="text-sm text-sky-300 font-medium">
-                                        💡 Recommendation: {engagementScore.recommendation}
+                                        ðŸ’¡ Recommendation: {engagementScore.recommendation}
                                     </p>
                                 </div>
                             </div>
@@ -1120,12 +1133,13 @@ const CandidateDetail: React.FC<CandidateDetailProps> = ({ candidate, jobs, onIn
                                     disabled={actionInProgress}
                                     className="px-4 py-1.5 rounded-full bg-gradient-to-r from-sky-500 to-indigo-500 text-xs font-semibold uppercase tracking-widest hover:opacity-90 disabled:opacity-50 disabled:cursor-wait"
                                 >
-                                    {actionInProgress ? 'Working…' : 'Next action'}
+                                    {actionInProgress ? 'Workingâ€¦' : 'Next action'}
                                 </button>
                             </div>
                         )}
+                        {nextAction && <RecommendationScorecardPanel candidate={candidate} job={nextAction.job} />}
                         {semanticJobMatchLoading && (
-                            <p className="text-xs text-slate-400 mb-3">Computing semantic match scores…</p>
+                            <p className="text-xs text-slate-400 mb-3">Computing semantic match scoresâ€¦</p>
                         )}
                         {semanticJobMatchError && (
                             <p className="text-xs text-red-400 mb-3">{semanticJobMatchError}</p>
@@ -1564,7 +1578,7 @@ const CandidateDetail: React.FC<CandidateDetailProps> = ({ candidate, jobs, onIn
                 </div>
 
                 {pipelineEventsLoading ? (
-                    <div className="text-xs text-slate-400">Loading pipeline activity…</div>
+                    <div className="text-xs text-slate-400">Loading pipeline activityâ€¦</div>
                 ) : pipelineEvents.length === 0 ? (
                     <p className="text-gray-400 italic">No pipeline activity recorded for this candidate yet.</p>
                 ) : showPipelineActivity ? (

@@ -1,7 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { pulseService } from '../services/PulseService';
 import { PulseAlert } from '../types/pulse';
 import { Bell, AlertTriangle, Zap, TrendingUp, UserMinus, X } from 'lucide-react';
+import { eventBus, EVENTS } from '../utils/EventBus';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 
 interface PulseFeedProps {
     isOpen: boolean;
@@ -10,6 +12,9 @@ interface PulseFeedProps {
 
 const PulseFeed: React.FC<PulseFeedProps> = ({ isOpen, onClose }) => {
     const [alerts, setAlerts] = useState<PulseAlert[]>(pulseService.getAlerts());
+    const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+
+    useEscapeKey({ active: isOpen, onEscape: onClose });
 
     useEffect(() => {
         // Subscribe to real-time updates
@@ -22,6 +27,12 @@ const PulseFeed: React.FC<PulseFeedProps> = ({ isOpen, onClose }) => {
 
         return () => unsubscribe();
     }, []);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        // Focus the close button so keyboard users can immediately dismiss.
+        closeButtonRef.current?.focus();
+    }, [isOpen]);
 
     if (!isOpen) return null;
 
@@ -42,14 +53,23 @@ const PulseFeed: React.FC<PulseFeedProps> = ({ isOpen, onClose }) => {
         }
     };
 
-    return (
-        <div className="absolute top-16 right-4 w-96 bg-slate-900 border border-slate-700 shadow-2xl rounded-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2">
+	    return (
+	        <div
+	            className="absolute top-16 right-4 w-96 bg-slate-900 border border-slate-700 shadow-2xl rounded-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2"
+	            role="dialog"
+	            aria-label="Talent Pulse notifications"
+	        >
             <div className="flex items-center justify-between p-4 border-b border-slate-700 bg-slate-800/80 backdrop-blur">
                 <h3 className="text-white font-bold flex items-center gap-2">
                     <Zap className="text-sky-400" size={18} />
                     Talent Pulse
                 </h3>
-                <button onClick={onClose} className="text-slate-400 hover:text-white">
+                <button
+                    ref={closeButtonRef}
+                    onClick={onClose}
+                    className="text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 rounded"
+                    aria-label="Close notifications"
+                >
                     <X size={18} />
                 </button>
             </div>
@@ -83,6 +103,65 @@ const PulseFeed: React.FC<PulseFeedProps> = ({ isOpen, onClose }) => {
                         <p className="text-xs text-slate-400 leading-relaxed">
                             {alert.message}
                         </p>
+
+                        {(alert.entityRef?.candidateId || alert.entityRef?.jobId) && (
+                            <div className="mt-3 flex items-center gap-2">
+                                {alert.entityRef?.candidateId && (
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            pulseService.markAsRead(alert.id);
+                                            eventBus.emit(EVENTS.PULSE_NAVIGATE, {
+                                                to: 'candidates',
+                                                candidateId: alert.entityRef?.candidateId,
+                                                jobId: alert.entityRef?.jobId
+                                            });
+                                            onClose();
+                                        }}
+                                        className="px-3 py-1.5 rounded-full text-[11px] font-semibold bg-slate-900/40 border border-slate-700 text-slate-200 hover:border-slate-600 hover:text-white"
+                                    >
+                                        Open Candidate
+                                    </button>
+                                )}
+                                {alert.entityRef?.jobId && (
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            pulseService.markAsRead(alert.id);
+                                            eventBus.emit(EVENTS.PULSE_NAVIGATE, {
+                                                to: 'pipeline',
+                                                jobId: alert.entityRef?.jobId
+                                            });
+                                            onClose();
+                                        }}
+                                        className="px-3 py-1.5 rounded-full text-[11px] font-semibold bg-slate-900/40 border border-slate-700 text-slate-200 hover:border-slate-600 hover:text-white"
+                                    >
+                                        Open Pipeline
+                                    </button>
+                                )}
+                            </div>
+                        )}
+
+                        {alert.actionLink && (
+                            <div className="mt-2">
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        pulseService.markAsRead(alert.id);
+                                        if (String(alert.actionLink).includes('agent-inbox')) {
+                                            eventBus.emit(EVENTS.PULSE_NAVIGATE, { to: 'agent-inbox' });
+                                        }
+                                        onClose();
+                                    }}
+                                    className="px-3 py-1.5 rounded-full text-[11px] font-semibold bg-slate-900/40 border border-slate-700 text-slate-200 hover:border-slate-600 hover:text-white"
+                                >
+                                    Open Agent Inbox
+                                </button>
+                            </div>
+                        )}
                     </div>
                 ))}
             </div>

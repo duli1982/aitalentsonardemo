@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, GraduationCap, Loader2, Target, Clock, TrendingUp, ExternalLink, BookOpen, Award } from 'lucide-react';
 import type { Candidate, Job } from '../../types';
 import * as geminiService from '../../services/geminiService';
+import { useToast } from '../../contexts/ToastContext';
 
 interface TrainingRecommenderModalProps {
     isOpen: boolean;
@@ -13,6 +14,7 @@ interface TrainingRecommenderModalProps {
 const TrainingRecommenderModal: React.FC<TrainingRecommenderModalProps> = ({ isOpen, onClose, candidate, job }) => {
     const [recommendations, setRecommendations] = useState<geminiService.TrainingRecommendation | null>(null);
     const [isGenerating, setIsGenerating] = useState(false);
+    const { showToast } = useToast();
 
     const handleGenerate = async () => {
         setIsGenerating(true);
@@ -229,7 +231,7 @@ const TrainingRecommenderModal: React.FC<TrainingRecommenderModalProps> = ({ isO
                         {recommendations && (
                             <button
                                 onClick={() => {
-                                    alert('Training plan saved! Candidate will be notified.');
+                                    showToast('Training plan assigned. Candidate notification is a demo placeholder.', 'success');
                                     onClose();
                                 }}
                                 className="px-6 py-2.5 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white font-semibold rounded-lg transition-all flex items-center gap-2"

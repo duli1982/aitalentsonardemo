@@ -353,16 +353,41 @@ ALTER TABLE candidate_collaborations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE candidate_reporting ENABLE ROW LEVEL SECURITY;
 
 -- Create policies for authenticated users (modify based on your security requirements)
-CREATE POLICY "Allow all for authenticated users" ON companies FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all for authenticated users" ON schools FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all for authenticated users" ON skills FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all for authenticated users" ON projects FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all for authenticated users" ON candidate_companies FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all for authenticated users" ON candidate_schools FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all for authenticated users" ON candidate_skills FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all for authenticated users" ON candidate_projects FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all for authenticated users" ON candidate_collaborations FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all for authenticated users" ON candidate_reporting FOR ALL TO authenticated USING (true) WITH CHECK (true);
+-- NOTE: Postgres does not support `CREATE POLICY IF NOT EXISTS`, so we wrap policy creation
+-- in a DO block to make this script safe to re-run.
+DO $$
+DECLARE
+    policy_name TEXT := 'Allow all for authenticated users';
+    t TEXT;
+BEGIN
+    FOREACH t IN ARRAY ARRAY[
+        'companies',
+        'schools',
+        'skills',
+        'projects',
+        'candidate_companies',
+        'candidate_schools',
+        'candidate_skills',
+        'candidate_projects',
+        'candidate_collaborations',
+        'candidate_reporting'
+    ]
+    LOOP
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_policies
+            WHERE schemaname = 'public'
+              AND tablename = t
+              AND policyname = policy_name
+        ) THEN
+            EXECUTE format(
+                'CREATE POLICY %I ON public.%I FOR ALL TO authenticated USING (true) WITH CHECK (true);',
+                policy_name,
+                t
+            );
+        END IF;
+    END LOOP;
+END $$;
 
 -- Optional: Create policies for anonymous users if needed
 -- CREATE POLICY "Allow read for anon users" ON companies FOR SELECT TO anon USING (true);

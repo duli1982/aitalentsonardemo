@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { X, Search, Sparkles, Loader2, TrendingUp, Briefcase, User } from 'lucide-react';
 import { semanticSearchService, SemanticSearchResult } from '../../services/SemanticSearchService';
+import { degradedModeService } from '../../services/DegradedModeService';
+import { unknown } from '../../services/errorHandling';
 
 interface SmartSearchModalProps {
     isOpen: boolean;
@@ -32,13 +34,35 @@ const SmartSearchModal: React.FC<SmartSearchModalProps> = ({
                 limit: 10
             });
 
-            setResults(searchResults);
+            const list = searchResults.success ? searchResults.data : searchResults.data ?? [];
+            setResults(list);
 
-            if (searchResults.length === 0) {
+            if (!searchResults.success) {
+                degradedModeService.report({
+                    feature: 'smart_search',
+                    error: searchResults.error,
+                    retryAfterMs: searchResults.retryAfterMs,
+                    lastUpdatedAt: new Date().toISOString(),
+                    whatMightBeMissing: 'Search results may be incomplete.',
+                    input: { query, threshold: 0.6, limit: 10 }
+                });
+            }
+
+            if (list.length === 0) {
                 setError('No candidates found matching your query. Try different keywords or lower the similarity threshold.');
+            } else if (!searchResults.success) {
+                setError(searchResults.error.message);
             }
         } catch (err) {
-            setError(`Search failed: ${String(err)}`);
+            const appErr = unknown('SmartSearchModal', 'Search threw unexpectedly.', err);
+            degradedModeService.report({
+                feature: 'smart_search',
+                error: appErr,
+                lastUpdatedAt: new Date().toISOString(),
+                whatMightBeMissing: 'Search results may be incomplete.',
+                input: { query, threshold: 0.6, limit: 10 }
+            });
+            setError(appErr.message);
             setResults([]);
         } finally {
             setIsSearching(false);

@@ -30,7 +30,9 @@ export type MigrationProgressCallback = (progress: MigrationProgress) => void;
 
 interface CandidateRecord {
     id: string;
+    candidate_id?: string;
     metadata: {
+        id?: string;
         name?: string;
         title?: string;
         currentCompany?: string;
@@ -100,10 +102,16 @@ class GraphMigrationService {
                 console.log(`[Migration] Processing batch ${progress.currentBatch + 1}/${progress.totalBatches} (${batchStart}-${batchEnd})`);
 
                 // Fetch batch of candidates
-                const { data: candidates, error: fetchError } = await supabase
+                const viewish = await supabase
                     .from('candidate_documents')
-                    .select('id, metadata')
+                    .select('id, candidate_id, metadata')
                     .range(batchStart, batchEnd - 1);
+
+                const fallback = viewish.error
+                    ? await supabase.from('candidate_documents').select('id, metadata').range(batchStart, batchEnd - 1)
+                    : null;
+
+                const { data: candidates, error: fetchError } = (viewish.error ? fallback : viewish) as any;
 
                 if (fetchError || !candidates) {
                     throw new Error(`Failed to fetch candidates: ${fetchError?.message}`);
@@ -182,8 +190,15 @@ class GraphMigrationService {
 
         for (const candidate of candidates) {
             try {
+                const stableCandidateId = String(candidate.candidate_id || candidate.metadata?.id || candidate.id);
+                if (!stableCandidateId || stableCandidateId.startsWith('undefined')) {
+                    failed++;
+                    errors.push('Candidate missing stable id (metadata.id); skipping.');
+                    continue;
+                }
+
                 const shouldRun = await processingMarkerService.beginStep({
-                    candidateId: candidate.id,
+                    candidateId: stableCandidateId,
                     jobId: this.migrationMarkJobId,
                     step: 'migrate_candidate_v1',
                     ttlMs: 1000 * 60 * 5
@@ -197,7 +212,7 @@ class GraphMigrationService {
 
                 await this.migrateCandidate(candidate);
                 await processingMarkerService.completeStep({
-                    candidateId: candidate.id,
+                    candidateId: stableCandidateId,
                     jobId: this.migrationMarkJobId,
                     step: 'migrate_candidate_v1'
                 });
@@ -205,7 +220,7 @@ class GraphMigrationService {
                 succeeded++;
             } catch (error) {
                 failed++;
-                const candidateName = candidate.metadata?.name || candidate.id;
+                const candidateName = candidate.metadata?.name || candidate.metadata?.id || candidate.id;
                 const errorMsg = error instanceof Error ? error.message : 'Unknown error';
                 errors.push(`Failed to migrate ${candidateName}: ${errorMsg}`);
             }
@@ -223,11 +238,14 @@ class GraphMigrationService {
         const metadata = candidate.metadata;
         if (!metadata) return;
 
+        const candidateId = String(candidate.candidate_id || metadata.id || candidate.id);
+        if (!candidateId || candidateId.startsWith('undefined')) return;
+
         // Create company relationship
         const company = metadata.currentCompany || metadata.company;
         if (company) {
             await this.createCompanyRelationship(
-                candidate.id,
+                candidateId,
                 company,
                 metadata.industry || 'Technology',
                 metadata.title || 'Unknown',
@@ -238,7 +256,7 @@ class GraphMigrationService {
         // Create school relationship
         if (metadata.education) {
             await this.createSchoolRelationship(
-                candidate.id,
+                candidateId,
                 metadata.education,
                 metadata.experienceYears || 3
             );
@@ -247,7 +265,7 @@ class GraphMigrationService {
         // Create skill relationships
         if (metadata.skills && metadata.skills.length > 0) {
             await this.createSkillRelationships(
-                candidate.id,
+                candidateId,
                 metadata.skills,
                 metadata.experienceYears || 3
             );

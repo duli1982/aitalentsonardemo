@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Calendar, Play, Pause, Clock, CheckCircle, AlertCircle, Zap, Link as LinkIcon } from 'lucide-react';
 import type { Job } from '../types';
 import { autonomousSchedulingAgent, type MeetingProvider, type ScheduledInterview } from '../services/AutonomousSchedulingAgent';
+import { agentSettingsService } from '../services/AgentSettingsService';
 
 interface AutonomousSchedulingControlProps {
     jobs: Job[];
@@ -85,7 +86,8 @@ const AutonomousSchedulingControl: React.FC<AutonomousSchedulingControlProps> = 
     const upcoming = useMemo(() => autonomousSchedulingAgent.getUpcomingInterviews(), [status]);
 
     useEffect(() => {
-        autonomousSchedulingAgent.initialize();
+        const settings = agentSettingsService.getAgent('scheduling');
+        autonomousSchedulingAgent.initialize({ enabled: settings.enabled, mode: settings.mode });
         setMeetingProvider(autonomousSchedulingAgent.getMeetingProvider());
         const refresh = () => setStatus(autonomousSchedulingAgent.getStatus());
         refresh();
@@ -99,6 +101,7 @@ const AutonomousSchedulingControl: React.FC<AutonomousSchedulingControlProps> = 
 
     const handleToggle = () => {
         const newState = !status?.enabled;
+        agentSettingsService.setEnabled('scheduling', newState);
         autonomousSchedulingAgent.setEnabled(newState);
         setTimeout(() => setStatus(autonomousSchedulingAgent.getStatus()), 100);
     };

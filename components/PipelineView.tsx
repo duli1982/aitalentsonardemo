@@ -1,7 +1,10 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { Job, Candidate, PipelineStage } from '../types';
 import { useData } from '../contexts/DataContext';
-import { Search, User, Users, CheckCircle, XCircle, MessageSquare, Calendar, Briefcase, ChevronRight } from 'lucide-react';
+import { Search, User, Users, CheckCircle, XCircle, MessageSquare, Calendar, Briefcase, ChevronRight, AlertTriangle, X, PanelRightOpen, ShieldCheck } from 'lucide-react';
+import { useToast } from '../contexts/ToastContext';
+import JobDetailsDrawer from './modals/JobDetailsDrawer';
+import PipelineFairnessModal from './modals/PipelineFairnessModal';
 
 interface PipelineViewProps {
   job: Job | undefined;
@@ -30,6 +33,21 @@ const normalizeStage = (raw: unknown): PipelineStage => {
   }
   return 'new';
 };
+
+const DESTRUCTIVE_STAGES: PipelineStage[] = ['rejected', 'hired'];
+
+function stageLabel(stage: PipelineStage): string {
+  if (stage === 'long_list') return 'Long List';
+  if (stage === 'sourced') return 'Sourced';
+  if (stage === 'new') return 'New';
+  if (stage === 'screening') return 'Screening';
+  if (stage === 'scheduling') return 'Interview Scheduling';
+  if (stage === 'interview') return 'Interview';
+  if (stage === 'offer') return 'Offer';
+  if (stage === 'hired') return 'Hired';
+  if (stage === 'rejected') return 'Rejected';
+  return stage;
+}
 
 const PipelineColumn: React.FC<{
   stage: typeof STAGES[0];
@@ -121,6 +139,23 @@ const PipelineColumn: React.FC<{
 
 const PipelineView: React.FC<PipelineViewProps> = ({ job, onUpdateCandidateStage, onOpenCandidateJobDrawer }) => {
   const { internalCandidates, pastCandidates, uploadedCandidates } = useData();
+  const { showToast } = useToast();
+  const [jobDetailsOpen, setJobDetailsOpen] = useState(false);
+  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
+  const [fairnessOpen, setFairnessOpen] = useState(false);
+
+  const [pendingMove, setPendingMove] = useState<{
+    candidateId: string;
+    fromStage: PipelineStage;
+    toStage: PipelineStage;
+  } | null>(null);
+
+  const [undoMove, setUndoMove] = useState<{
+    candidateId: string;
+    fromStage: PipelineStage;
+    toStage: PipelineStage;
+    expiresAt: number;
+  } | null>(null);
 
   const allCandidates = useMemo(() => [...internalCandidates, ...pastCandidates, ...uploadedCandidates], [internalCandidates, pastCandidates, uploadedCandidates]);
 
@@ -149,6 +184,13 @@ const PipelineView: React.FC<PipelineViewProps> = ({ job, onUpdateCandidateStage
     return grouped;
   }, [allCandidates, job]);
 
+  useEffect(() => {
+    if (!undoMove) return;
+    const delay = Math.max(0, undoMove.expiresAt - Date.now());
+    const t = setTimeout(() => setUndoMove(null), delay);
+    return () => clearTimeout(t);
+  }, [undoMove]);
+
   if (!job) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-gray-500 bg-slate-800 rounded-xl border border-slate-700">
@@ -158,11 +200,67 @@ const PipelineView: React.FC<PipelineViewProps> = ({ job, onUpdateCandidateStage
     );
   }
 
+  const getCandidateStage = (candidateId: string): PipelineStage => {
+    const c = allCandidates.find((cand) => cand.id === candidateId);
+    if (!c) return 'new';
+    return normalizeStage(c.pipelineStage?.[job.id] || c.stage || 'new');
+  };
+
+  const performStageMove = (candidateId: string, fromStage: PipelineStage, toStage: PipelineStage) => {
+    onUpdateCandidateStage(candidateId, job.id, toStage);
+    setUndoMove({ candidateId, fromStage, toStage, expiresAt: Date.now() + 7000 });
+    showToast(`Moved to ${stageLabel(toStage)}.`, 'success', 2500);
+  };
+
+  const requestStageMove = (candidateId: string, toStage: PipelineStage) => {
+    const fromStage = getCandidateStage(candidateId);
+    if (fromStage === toStage) return;
+
+    if (DESTRUCTIVE_STAGES.includes(toStage)) {
+      setPendingMove({ candidateId, fromStage, toStage });
+      return;
+    }
+
+    performStageMove(candidateId, fromStage, toStage);
+  };
+
   const totalCandidates = Object.values(candidatesByStage).reduce((sum: number, arr: Candidate[]) => sum + arr.length, 0);
   const activeStages = Object.values(candidatesByStage).filter((arr: Candidate[]) => arr.length > 0).length;
+  const hasDescription = Boolean(job.description && job.description.trim().length);
+  const showExcerptToggle = Boolean(job.description && job.description.trim().length > 160);
 
   return (
     <div className="h-full flex flex-col bg-slate-900/50 rounded-xl overflow-hidden">
+      {undoMove && (
+        <div className="p-3 border-b border-slate-700 bg-slate-800/70">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-xs text-slate-200">
+              Moved candidate to <span className="font-semibold">{stageLabel(undoMove.toStage)}</span>. Undo?
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  onUpdateCandidateStage(undoMove.candidateId, job.id, undoMove.fromStage);
+                  showToast(`Reverted to ${stageLabel(undoMove.fromStage)}.`, 'info', 2500);
+                  setUndoMove(null);
+                }}
+                className="px-3 py-1.5 rounded-lg bg-slate-900/40 border border-slate-700 text-slate-100 text-xs font-semibold hover:border-slate-600 hover:text-white"
+              >
+                Undo
+              </button>
+              <button
+                type="button"
+                onClick={() => setUndoMove(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+                aria-label="Dismiss undo"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="p-4 border-b border-slate-700 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 bg-slate-800">
         <div>
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
@@ -172,8 +270,38 @@ const PipelineView: React.FC<PipelineViewProps> = ({ job, onUpdateCandidateStage
           <p className="text-sm text-gray-400 mt-1">
             <span className="font-medium text-white">{totalCandidates}</span> candidates across <span className="font-medium text-white">{activeStages}</span> stages
           </p>
+          <div className="mt-2">
+            <div className={`text-sm text-slate-200 ${descriptionExpanded ? '' : 'line-clamp-3'}`}>
+              {hasDescription ? job.description : <span className="text-slate-400">No job description provided yet.</span>}
+            </div>
+            {(hasDescription && showExcerptToggle) && (
+              <button
+                type="button"
+                onClick={() => setDescriptionExpanded((v) => !v)}
+                className="mt-1 text-xs text-sky-300 hover:text-sky-200"
+              >
+                {descriptionExpanded ? 'Show less' : 'Show more'}
+              </button>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-4 text-xs text-gray-400">
+        <div className="flex items-center gap-2 sm:gap-4 text-xs text-gray-400">
+          <button
+            type="button"
+            onClick={() => setJobDetailsOpen(true)}
+            className="px-3 py-2 rounded-lg bg-slate-900/30 border border-slate-700 text-slate-200 text-xs font-semibold hover:border-slate-600 hover:text-white flex items-center gap-2"
+          >
+            <PanelRightOpen className="h-4 w-4 text-sky-300" />
+            Job details
+          </button>
+          <button
+            type="button"
+            onClick={() => setFairnessOpen(true)}
+            className="px-3 py-2 rounded-lg bg-slate-900/30 border border-slate-700 text-slate-200 text-xs font-semibold hover:border-slate-600 hover:text-white flex items-center gap-2"
+          >
+            <ShieldCheck className="h-4 w-4 text-emerald-300" />
+            Fairness
+          </button>
           <div className="flex items-center gap-1">
             <div className="w-2 h-2 rounded-full bg-green-500"></div>
             <span>&gt;=70%</span>
@@ -193,12 +321,70 @@ const PipelineView: React.FC<PipelineViewProps> = ({ job, onUpdateCandidateStage
               stage={stage}
               candidates={candidatesByStage[stage.id]}
               jobId={job.id}
-              onUpdateStage={(candidateId, newStage) => onUpdateCandidateStage(candidateId, job.id, newStage)}
+              onUpdateStage={requestStageMove}
               onView={(candidate) => onOpenCandidateJobDrawer(candidate, job)}
             />
           ))}
         </div>
       </div>
+
+      {pendingMove && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[120]">
+          <div className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-900 shadow-2xl overflow-hidden">
+            <div className="p-4 border-b border-slate-700 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-amber-400" />
+                <div className="text-sm font-semibold text-white">Confirm stage change</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPendingMove(null)}
+                className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3">
+              <div className="text-sm text-slate-200">
+                Move candidate from <span className="font-semibold">{stageLabel(pendingMove.fromStage)}</span> to{' '}
+                <span className="font-semibold">{stageLabel(pendingMove.toStage)}</span>?
+              </div>
+              <div className="text-xs text-slate-500">
+                This is a high-impact stage. You can undo immediately after confirming.
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-slate-700 flex items-center justify-end gap-2 bg-slate-900/70">
+              <button
+                type="button"
+                onClick={() => setPendingMove(null)}
+                className="px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 text-sm font-semibold hover:bg-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  performStageMove(pendingMove.candidateId, pendingMove.fromStage, pendingMove.toStage);
+                  setPendingMove(null);
+                }}
+                className={`px-4 py-2 rounded-lg text-sm font-semibold ${
+                  pendingMove.toStage === 'rejected'
+                    ? 'bg-red-600 hover:bg-red-500 text-white'
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                }`}
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <JobDetailsDrawer isOpen={jobDetailsOpen} job={job} onClose={() => setJobDetailsOpen(false)} />
+      <PipelineFairnessModal isOpen={fairnessOpen} jobId={job.id} jobTitle={job.title} onClose={() => setFairnessOpen(false)} />
     </div>
   );
 };

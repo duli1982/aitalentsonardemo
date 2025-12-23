@@ -4,6 +4,7 @@ import type { Candidate, Job, PipelineStage } from '../types';
 import { useData } from '../contexts/DataContext';
 import { useAllSupabaseCandidates } from '../hooks/useAllSupabaseCandidates';
 import { autonomousScreeningAgent, type ScreeningResult } from '../services/AutonomousScreeningAgent';
+import { agentSettingsService } from '../services/AgentSettingsService';
 
 interface AutonomousScreeningControlProps {
     jobs: Job[];
@@ -180,7 +181,8 @@ const AutonomousScreeningControl: React.FC<AutonomousScreeningControlProps> = ({
     }, [selectedResult]);
 
     useEffect(() => {
-        autonomousScreeningAgent.initialize();
+        const settings = agentSettingsService.getAgent('screening');
+        autonomousScreeningAgent.initialize({ enabled: settings.enabled, mode: settings.mode });
         const refresh = () => setStatus(autonomousScreeningAgent.getStatus());
         refresh();
         const interval = setInterval(refresh, 30000);
@@ -193,6 +195,7 @@ const AutonomousScreeningControl: React.FC<AutonomousScreeningControlProps> = ({
 
     const handleToggle = () => {
         const newState = !status?.enabled;
+        agentSettingsService.setEnabled('screening', newState);
         autonomousScreeningAgent.setEnabled(newState);
         setTimeout(() => setStatus(autonomousScreeningAgent.getStatus()), 100);
     };

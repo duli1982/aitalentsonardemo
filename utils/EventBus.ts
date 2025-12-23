@@ -83,9 +83,18 @@ export const EVENTS = {
 
     // Pulse Events
     PULSE_ALERT: 'pulse:alert',
+    PULSE_NAVIGATE: 'pulse:navigate',
 
     // System Events
     DATA_SYNCED: 'system:data:synced',
+    APP_DEGRADED: 'system:degraded',
+
+    // Background Jobs / Agents
+    BACKGROUND_JOBS_CHANGED: 'background:jobs:changed',
+    BACKGROUND_JOB_RESULT: 'background:job:result',
+
+    // Agent proposals
+    PROPOSED_ACTIONS_CHANGED: 'agent:proposals:changed',
 } as const;
 
 export type EventType = typeof EVENTS[keyof typeof EVENTS];

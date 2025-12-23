@@ -12,6 +12,7 @@ import { semanticSearchService } from './SemanticSearchService';
 import { aiService } from './AIService';
 import { supabase } from './supabaseClient';
 import { graphQueryService } from './GraphQueryService';
+import type { AppError } from '../types/errors';
 
 export interface RAGQuery {
     query: string;
@@ -52,14 +53,17 @@ class RAGService {
 
         let searchResults: any[] = [];
         let usedThreshold = searchThreshold;
+        let lastSearchError: AppError | null = null;
 
         for (const threshold of fallbackThresholds) {
             usedThreshold = threshold;
-            searchResults = await semanticSearchService.search(query, {
+            const res = await semanticSearchService.search(query, {
                 threshold,
                 limit: maxCandidates
             });
 
+            searchResults = res.success ? res.data : res.data ?? [];
+            if (!res.success) lastSearchError = res.error;
             if (searchResults.length > 0) break;
         }
 
@@ -68,7 +72,8 @@ class RAGService {
         if (searchResults.length === 0) {
             let totalCandidatesInDb: number | null = null;
             try {
-                totalCandidatesInDb = await semanticSearchService.getTotalCount();
+                const countRes = await semanticSearchService.getTotalCount();
+                totalCandidatesInDb = countRes.success ? countRes.data : countRes.data ?? null;
             } catch {
                 totalCandidatesInDb = null;
             }
@@ -81,9 +86,11 @@ class RAGService {
                 ? 'It looks like your vector database is empty (0 candidate_documents). Run ingestion/migration first.'
                 : 'Try using more candidate-like keywords (skills, role title, location) instead of a long instruction, or lower the similarity threshold.';
 
+            const errorHint = lastSearchError ? `\n\nNote: Search is currently degraded. Debug ID: ${lastSearchError.debugId}` : '';
+
             return {
                 query,
-                response: `I couldn't find any candidates matching your criteria in the database. ${thresholdText}\n\n${dbHint}`,
+                response: `I couldn't find any candidates matching your criteria in the database. ${thresholdText}\n\n${dbHint}${errorHint}`,
                 sourceCandidates: [],
                 timestamp: new Date()
             };
@@ -408,12 +415,15 @@ Your response:`;
 
         console.log(`[RAGService] Graph query: Find candidates from ${companyName}`);
 
-        const candidates = await graphQueryService.findCandidatesByCompany(companyName);
+        const companyRes = await graphQueryService.findCandidatesByCompany(companyName);
+        const candidates = companyRes.success ? companyRes.data : companyRes.data ?? [];
 
         if (candidates.length === 0) {
             return {
                 query: `Find candidates from ${companyName}`,
-                response: `No candidates found who have worked at ${companyName}.`,
+                response: companyRes.success
+                    ? `No candidates found who have worked at ${companyName}.`
+                    : `Graph search is currently degraded. Please try again. Debug ID: ${companyRes.error.debugId}`,
                 sourceCandidates: [],
                 timestamp: new Date()
             };
@@ -455,12 +465,15 @@ Your response:`;
 
         console.log(`[RAGService] Graph query: Find candidates from ${schoolName}`);
 
-        const candidates = await graphQueryService.findCandidatesBySchool(schoolName);
+        const schoolRes = await graphQueryService.findCandidatesBySchool(schoolName);
+        const candidates = schoolRes.success ? schoolRes.data : schoolRes.data ?? [];
 
         if (candidates.length === 0) {
             return {
                 query: `Find candidates from ${schoolName}`,
-                response: `No candidates found who studied at ${schoolName}.`,
+                response: schoolRes.success
+                    ? `No candidates found who studied at ${schoolName}.`
+                    : `Graph search is currently degraded. Please try again. Debug ID: ${schoolRes.error.debugId}`,
                 sourceCandidates: [],
                 timestamp: new Date()
             };
@@ -504,16 +517,19 @@ Your response:`;
 
         console.log('[RAGService] Multi-criteria graph query:', { companies, schools, skills });
 
-        const candidates = await graphQueryService.findCandidatesByMultipleCriteria({
+        const criteriaRes = await graphQueryService.findCandidatesByMultipleCriteria({
             companies,
             schools,
             skills
         });
+        const candidates = criteriaRes.success ? criteriaRes.data : criteriaRes.data ?? [];
 
         if (candidates.length === 0) {
             return {
                 query: 'Multi-criteria graph search',
-                response: 'No candidates found matching all specified criteria.',
+                response: criteriaRes.success
+                    ? 'No candidates found matching all specified criteria.'
+                    : `Graph search is currently degraded. Please try again. Debug ID: ${criteriaRes.error.debugId}`,
                 sourceCandidates: [],
                 timestamp: new Date()
             };
@@ -558,12 +574,15 @@ Your response:`;
 
         console.log(`[RAGService] Analyzing career paths from ${fromCompany} to ${toCompany}`);
 
-        const paths = await graphQueryService.findCareerPaths(fromCompany, toCompany);
+        const pathsRes = await graphQueryService.findCareerPaths(fromCompany, toCompany);
+        const paths = pathsRes.success ? pathsRes.data : pathsRes.data ?? [];
 
         if (paths.length === 0) {
             return {
                 query: 'Career path analysis',
-                response: 'Not enough data to analyze career paths for these companies.',
+                response: pathsRes.success
+                    ? 'Not enough data to analyze career paths for these companies.'
+                    : `Career path query is currently degraded. Please try again. Debug ID: ${pathsRes.error.debugId}`,
                 sourceCandidates: [],
                 timestamp: new Date()
             };
@@ -592,12 +611,15 @@ Your response:`;
     async analyzeSkillClusters(skillName: string): Promise<RAGResult> {
         console.log(`[RAGService] Analyzing skill clusters for ${skillName}`);
 
-        const clusters = await graphQueryService.findSkillClusters(skillName);
+        const clustersRes = await graphQueryService.findSkillClusters(skillName);
+        const clusters = clustersRes.success ? clustersRes.data : clustersRes.data ?? [];
 
         if (clusters.length === 0) {
             return {
                 query: `Skill cluster analysis for ${skillName}`,
-                response: `No skill cluster data available for ${skillName}.`,
+                response: clustersRes.success
+                    ? `No skill cluster data available for ${skillName}.`
+                    : `Skill cluster query is currently degraded. Please try again. Debug ID: ${clustersRes.error.debugId}`,
                 sourceCandidates: [],
                 timestamp: new Date()
             };

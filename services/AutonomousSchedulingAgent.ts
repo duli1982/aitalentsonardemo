@@ -10,6 +10,8 @@ import { eventBus, EVENTS } from '../utils/EventBus';
 import { pipelineEventService } from './PipelineEventService';
 import { processingMarkerService } from './ProcessingMarkerService';
 import { schedulingPersistenceService } from './SchedulingPersistenceService';
+import type { AgentMode } from './AgentSettingsService';
+import { proposedActionService } from './ProposedActionService';
 
 export interface SchedulingRequest {
     candidateId: string;
@@ -60,6 +62,7 @@ class AutonomousSchedulingAgent {
     private rescheduleQueue: RescheduleRequest[] = [];
     private scheduledInterviews: ScheduledInterview[] = [];
     private isInitialized = false;
+    private mode: AgentMode = 'recommend';
     private meetingProvider: MeetingProvider = 'google_meet';
     private readonly storageKey = 'autonomous_scheduling_interviews_v1';
 
@@ -132,7 +135,7 @@ class AutonomousSchedulingAgent {
      * Initialize the scheduling agent
      * Runs every 2 hours to process scheduling requests
      */
-    initialize() {
+    initialize(options?: { enabled?: boolean; mode?: AgentMode }) {
         if (this.isInitialized) {
             console.log('[AutonomousSchedulingAgent] Already initialized');
             return;
@@ -140,12 +143,13 @@ class AutonomousSchedulingAgent {
 
         console.log('[AutonomousSchedulingAgent] Initializing autonomous scheduling...');
         this.loadPersistedInterviews();
+        this.mode = options?.mode ?? 'recommend';
 
         this.jobId = backgroundJobService.registerJob({
             name: 'Autonomous Interview Scheduling',
             type: 'SCHEDULING',
             interval: 2 * 60 * 60 * 1000, // 2 hours
-            enabled: true,
+            enabled: options?.enabled ?? false,
             handler: async () => {
                 await this.processSchedulingQueue();
             }
@@ -363,12 +367,44 @@ class AutonomousSchedulingAgent {
                     }
                 });
 
-                eventBus.emit(EVENTS.CANDIDATE_STAGED, {
-                    candidateId: interview.candidateId,
-                    candidateName: interview.candidateName,
-                    jobId: interview.jobId,
-                    stage: 'interview'
-                });
+                if (this.mode === 'auto_write') {
+                    eventBus.emit(EVENTS.CANDIDATE_STAGED, {
+                        candidateId: interview.candidateId,
+                        candidateName: interview.candidateName,
+                        jobId: interview.jobId,
+                        stage: 'interview'
+                    });
+                } else {
+                    proposedActionService.add({
+                        agentType: 'SCHEDULING',
+                        title: 'Move Stage',
+                        description: `${interview.candidateName} for "${interview.jobTitle}" • Interview rescheduled and ready to move to Interview stage.`,
+                        candidateId: interview.candidateId,
+                        jobId: interview.jobId,
+                        payload: {
+                            type: 'MOVE_CANDIDATE_TO_STAGE',
+                            candidate: {
+                                id: interview.candidateId,
+                                name: interview.candidateName,
+                                role: 'Candidate',
+                                type: 'uploaded',
+                                skills: [],
+                                experience: 0,
+                                location: '',
+                                availability: ''
+                            } as any,
+                            jobId: interview.jobId,
+                            stage: 'interview'
+                        }
+                    });
+
+                    pulseService.addEvent({
+                        type: 'AGENT_ACTION',
+                        severity: 'info',
+                        message: `Proposal created: Move ${interview.candidateName} → Interview stage after reschedule confirmation.`,
+                        metadata: { agentType: 'SCHEDULING', candidateId: interview.candidateId, jobId: interview.jobId, actionLink: '/agent-inbox' }
+                    });
+                }
 
                 void processingMarkerService.completeStep({
                     candidateId: interview.candidateId,
@@ -399,12 +435,45 @@ class AutonomousSchedulingAgent {
                     metadata: { interviewId, scheduledTime: selectedSlot.toISOString(), meetingProvider: this.meetingProvider, meetingLink }
                 });
 
-                eventBus.emit(EVENTS.CANDIDATE_STAGED, {
-                    candidateId: request.candidateId,
-                    candidateName: request.candidateName,
-                    jobId: request.jobId,
-                    stage: 'interview'
-                });
+                if (this.mode === 'auto_write') {
+                    eventBus.emit(EVENTS.CANDIDATE_STAGED, {
+                        candidateId: request.candidateId,
+                        candidateName: request.candidateName,
+                        jobId: request.jobId,
+                        stage: 'interview'
+                    });
+                } else {
+                    proposedActionService.add({
+                        agentType: 'SCHEDULING',
+                        title: 'Move Stage',
+                        description: `${request.candidateName} for "${request.jobTitle}" • Interview scheduled and ready to move to Interview stage.`,
+                        candidateId: request.candidateId,
+                        jobId: request.jobId,
+                        payload: {
+                            type: 'MOVE_CANDIDATE_TO_STAGE',
+                            candidate: {
+                                id: request.candidateId,
+                                name: request.candidateName,
+                                email: request.candidateEmail,
+                                role: 'Candidate',
+                                type: 'uploaded',
+                                skills: [],
+                                experience: 0,
+                                location: '',
+                                availability: ''
+                            } as any,
+                            jobId: request.jobId,
+                            stage: 'interview'
+                        }
+                    });
+
+                    pulseService.addEvent({
+                        type: 'AGENT_ACTION',
+                        severity: 'info',
+                        message: `Proposal created: Move ${request.candidateName} → Interview stage after scheduling confirmation.`,
+                        metadata: { agentType: 'SCHEDULING', candidateId: request.candidateId, jobId: request.jobId, actionLink: '/agent-inbox' }
+                    });
+                }
 
                 void processingMarkerService.completeStep({
                     candidateId: request.candidateId,
@@ -475,12 +544,44 @@ class AutonomousSchedulingAgent {
                 });
                 if (!shouldRun) continue;
 
-                eventBus.emit(EVENTS.CANDIDATE_STAGED, {
-                    candidateId: interview.candidateId,
-                    candidateName: interview.candidateName,
-                    jobId: interview.jobId,
-                    stage: 'scheduling'
-                });
+                if (this.mode === 'auto_write') {
+                    eventBus.emit(EVENTS.CANDIDATE_STAGED, {
+                        candidateId: interview.candidateId,
+                        candidateName: interview.candidateName,
+                        jobId: interview.jobId,
+                        stage: 'scheduling'
+                    });
+                } else {
+                    proposedActionService.add({
+                        agentType: 'SCHEDULING',
+                        title: 'Move Stage',
+                        description: `${interview.candidateName} for "${interview.jobTitle}" • Reschedule requested; propose moving back to Scheduling stage.`,
+                        candidateId: interview.candidateId,
+                        jobId: interview.jobId,
+                        payload: {
+                            type: 'MOVE_CANDIDATE_TO_STAGE',
+                            candidate: {
+                                id: interview.candidateId,
+                                name: interview.candidateName,
+                                role: 'Candidate',
+                                type: 'uploaded',
+                                skills: [],
+                                experience: 0,
+                                location: '',
+                                availability: ''
+                            } as any,
+                            jobId: interview.jobId,
+                            stage: 'scheduling'
+                        }
+                    });
+
+                    pulseService.addEvent({
+                        type: 'AGENT_ACTION',
+                        severity: 'info',
+                        message: `Proposal created: Move ${interview.candidateName} → Scheduling stage for reschedule.`,
+                        metadata: { agentType: 'SCHEDULING', candidateId: interview.candidateId, jobId: interview.jobId, actionLink: '/agent-inbox' }
+                    });
+                }
 
                 void schedulingPersistenceService.upsertInterview({
                     interview,
@@ -679,6 +780,10 @@ class AutonomousSchedulingAgent {
 
         backgroundJobService.setJobEnabled(this.jobId, enabled);
         console.log(`[AutonomousSchedulingAgent] Agent ${enabled ? 'enabled' : 'disabled'}`);
+    }
+
+    setMode(mode: AgentMode) {
+        this.mode = mode;
     }
 
     /**

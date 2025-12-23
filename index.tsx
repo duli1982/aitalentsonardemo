@@ -6,6 +6,7 @@ import App from './App';
 
 import ErrorBoundary from './components/ErrorBoundary';
 import { ToastProvider } from './contexts/ToastContext';
+import { DegradedModeProvider } from './contexts/DegradedModeContext';
 
 // Polyfill for environments where `crypto.randomUUID` is missing.
 // Some third-party scripts/extensions assume it exists.
@@ -44,9 +45,11 @@ root.render(
   <React.StrictMode>
     <ErrorBoundary>
       <ToastProvider>
-        <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
-          <App />
-        </GoogleOAuthProvider>
+        <DegradedModeProvider>
+          <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+            <App />
+          </GoogleOAuthProvider>
+        </DegradedModeProvider>
       </ToastProvider>
     </ErrorBoundary>
   </React.StrictMode>

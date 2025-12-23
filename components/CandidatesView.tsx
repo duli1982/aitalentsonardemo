@@ -8,7 +8,7 @@ import ComparisonModal from './modals/ComparisonModal';
 import BulkOutreachModal from './modals/BulkOutreachModal';
 import { FilterCriteria } from '../services/geminiService';
 import { TrendingUp, Mail, Database, Users as UsersIcon, Loader2, RefreshCw, Filter, ChevronDown, MoreHorizontal } from 'lucide-react';
-import FairnessWidget from './FairnessWidget';
+import PipelineFairnessModal from './modals/PipelineFairnessModal';
 import { useSearchParams } from 'react-router-dom';
 import { useAllSupabaseCandidates } from '../hooks/useAllSupabaseCandidates';
 
@@ -30,6 +30,8 @@ const CandidatesView: React.FC<CandidatesViewProps> = ({ selectedCandidateId, on
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [sidebarMenuOpen, setSidebarMenuOpen] = useState(false);
   const [showInsights, setShowInsights] = useState(false);
+  const [fairnessOpen, setFairnessOpen] = useState(false);
+  const [fairnessJobId, setFairnessJobId] = useState<string | null>(null);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'internal' | 'past' | 'uploaded'>('all');
@@ -114,6 +116,12 @@ const CandidatesView: React.FC<CandidatesViewProps> = ({ selectedCandidateId, on
       return matchesSearch && matchesType && matchesSkills && matchesRole && matchesLocation;
     });
   }, [allCandidates, searchTerm, typeFilter, skillFilter, roleFilter, locationFilter]);
+
+  const fairnessJob = useMemo(() => {
+    if (!jobs.length) return null;
+    const id = fairnessJobId ?? jobs[0].id;
+    return jobs.find((j) => j.id === id) ?? jobs[0];
+  }, [jobs, fairnessJobId]);
 
   const selectedCandidate = useMemo(() =>
     allCandidates.find(c => c.id === selectedCandidateId),
@@ -312,11 +320,50 @@ const CandidatesView: React.FC<CandidatesViewProps> = ({ selectedCandidateId, on
 
         {showInsights && (
           <div className="px-4 py-3 border-b border-slate-700 space-y-3">
-            <FairnessWidget
-              candidates={filteredCandidates}
-              allCandidates={allCandidates}
-              onAddCandidate={() => { /* TODO: wire if needed */ }}
-            />
+            <div className="bg-slate-800 rounded-lg p-4 border border-slate-700 shadow-md">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h4 className="text-sm font-bold text-white uppercase tracking-wider">Fairness (Pipeline Cohorts)</h4>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Aggregate-only report by job + stage + time window. Requires HRIS/ATS/self-report demographics coverage.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFairnessOpen(true)}
+                  disabled={!fairnessJob}
+                  className="px-3 py-2 rounded-lg bg-slate-700/60 border border-slate-600 text-slate-100 text-xs font-semibold hover:bg-slate-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  Open report
+                </button>
+              </div>
+
+              <div className="mt-3 flex flex-col sm:flex-row gap-2 sm:items-center">
+                <div className="text-[11px] text-slate-400">Job</div>
+                <select
+                  value={fairnessJob?.id ?? ''}
+                  onChange={(e) => setFairnessJobId(e.target.value)}
+                  disabled={!jobs.length}
+                  className="flex-1 px-3 py-2 rounded-lg bg-slate-900/50 border border-slate-700 text-slate-100 text-sm disabled:opacity-60"
+                >
+                  {jobs.length === 0 ? (
+                    <option value="">No jobs</option>
+                  ) : (
+                    jobs.map((j) => (
+                      <option key={j.id} value={j.id}>
+                        {j.title}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+
+              {dataSource !== 'supabase' && (
+                <div className="mt-3 text-[11px] text-amber-200/90 bg-amber-900/20 border border-amber-500/20 rounded-lg p-2">
+                  Demo mode does not include consented demographics. Switch to DB mode to use pipeline fairness reporting.
+                </div>
+              )}
+            </div>
 
             {dataSource === 'supabase' && !isLoadingSupabase && supabaseCandidates.length > 0 && (
               <div className="p-2 bg-gradient-to-r from-sky-900/30 to-purple-900/30 border border-sky-500/30 rounded-lg">
@@ -404,6 +451,15 @@ const CandidatesView: React.FC<CandidatesViewProps> = ({ selectedCandidateId, on
           onClose={() => setBulkOutreachModalOpen(false)}
           candidates={comparisonCandidates}
           job={jobs[0]}
+        />
+      )}
+
+      {fairnessJob && (
+        <PipelineFairnessModal
+          isOpen={fairnessOpen}
+          onClose={() => setFairnessOpen(false)}
+          jobId={fairnessJob.id}
+          jobTitle={fairnessJob.title}
         />
       )}
     </div>

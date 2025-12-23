@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { Job, DepartmentInsight, Candidate, PipelineStage } from './types';
 import AddJobModal from './components/modals/AddJobModal';
 import UploadCvModal from './components/modals/UploadCvModal';
@@ -29,10 +29,65 @@ import OrgTwinPage from './pages/OrgTwinPage';
 import ForecastPage from './pages/ForecastPage';
 import AgentPlaygroundPage from './pages/AgentPlaygroundPage';
 import AutonomousAgentsPage from './pages/AutonomousAgentsPage';
+import AgentInboxPage from './pages/AgentInboxPage';
 import MobilityPage from './pages/MobilityPage';
 import GovernancePage from './pages/GovernancePage';
 import WarRoomPage from './pages/WarRoomPage';
 import IngestPage from './pages/IngestPage';
+import AutonomousAgentsBootstrap from './components/AutonomousAgentsBootstrap';
+
+type PulseNavigatePayload = {
+  to?: string;
+  candidateId?: string;
+  jobId?: string;
+};
+
+const PulseNavigationHandler: React.FC<{
+  jobs: Job[];
+  allCandidates: Candidate[];
+  setSelectedJobId: React.Dispatch<React.SetStateAction<string | null>>;
+  setSelectedCandidateId: React.Dispatch<React.SetStateAction<string | null>>;
+  openCandidateJobDrawer: (candidate: Candidate, job: Job) => void;
+}> = ({ jobs, allCandidates, setSelectedJobId, setSelectedCandidateId, openCandidateJobDrawer }) => {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const sub = eventBus.on<any>(EVENTS.PULSE_NAVIGATE, (data: PulseNavigatePayload) => {
+      const target = String(data?.to || '').toLowerCase();
+      const candidateId = data?.candidateId ? String(data.candidateId) : null;
+      const jobId = data?.jobId ? String(data.jobId) : null;
+
+      if (jobId) setSelectedJobId(jobId);
+      if (candidateId) setSelectedCandidateId(candidateId);
+
+      if (target === 'pipeline') {
+        navigate('/pipeline');
+        return;
+      }
+
+      if (target === 'agent-inbox') {
+        navigate('/agent-inbox');
+        return;
+      }
+
+      // Default: candidates page.
+      navigate('/candidates');
+
+      // If we have both job + candidate, open the job drawer after state updates.
+      if (candidateId && jobId) {
+        const candidate = allCandidates.find((c) => String(c.id) === candidateId);
+        const job = jobs.find((j) => String(j.id) === jobId);
+        if (candidate && job) {
+          setTimeout(() => openCandidateJobDrawer(candidate, job), 0);
+        }
+      }
+    });
+
+    return () => sub.unsubscribe();
+  }, [navigate, allCandidates, jobs, setSelectedJobId, setSelectedCandidateId, openCandidateJobDrawer]);
+
+  return null;
+};
 
 // Logic helpers (kept for now, or could be moved to utils)
 const calculateInitialMatch = (job: Job, candidate: Candidate): { score: number, rationale: string } => {
@@ -54,6 +109,7 @@ const AppContent = () => {
     pastCandidates, setPastCandidates,
     uploadedCandidates, setUploadedCandidates,
     selectedJobId, setSelectedJobId,
+    isInitialized,
   } = useData();
 
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
@@ -223,6 +279,49 @@ const AppContent = () => {
 
       const merged: Partial<Candidate> = { ...updates };
 
+      if (Array.isArray((updates as any).skills)) {
+        const base = Array.isArray(candidate.skills) ? candidate.skills : [];
+        const next = [...base];
+        const seen = new Set(base.map((s) => String(s).toLowerCase()));
+        (updates as any).skills.forEach((s: any) => {
+          const key = String(s).toLowerCase();
+          if (seen.has(key)) return;
+          seen.add(key);
+          next.push(String(s));
+        });
+        merged.skills = next;
+      }
+
+      if ((updates as any).passport) {
+        const patch = (updates as any).passport;
+        const existing = (candidate as any).passport ?? { verifiedSkills: [], badges: [] };
+        const existingSkills = Array.isArray(existing.verifiedSkills) ? existing.verifiedSkills : [];
+        const deltaSkills = Array.isArray(patch.verifiedSkills) ? patch.verifiedSkills : [];
+
+        const byName = new Map<string, any>();
+        existingSkills.forEach((s: any) => {
+          const key = String(s?.skillName || '').toLowerCase();
+          if (!key) return;
+          byName.set(key, s);
+        });
+
+        deltaSkills.forEach((s: any) => {
+          const key = String(s?.skillName || '').toLowerCase();
+          if (!key) return;
+          const prev = byName.get(key);
+          const prevLevel = Number(prev?.proficiencyLevel ?? 0);
+          const nextLevel = Number(s?.proficiencyLevel ?? 0);
+          if (!prev || nextLevel >= prevLevel) byName.set(key, s);
+        });
+
+        const nextBadges = Array.from(new Set([...(existing.badges ?? []), ...(patch.badges ?? [])]));
+
+        merged.passport = {
+          verifiedSkills: Array.from(byName.values()),
+          badges: nextBadges
+        } as any;
+      }
+
       if ((updates as any).matchScores) {
         merged.matchScores = { ...(candidate.matchScores || {}), ...(updates as any).matchScores };
       }
@@ -244,6 +343,14 @@ const AppContent = () => {
 
   return (
     <BrowserRouter>
+      <AutonomousAgentsBootstrap isInitialized={isInitialized} jobs={jobs} allCandidates={allCandidates} />
+      <PulseNavigationHandler
+        jobs={jobs}
+        allCandidates={allCandidates}
+        setSelectedJobId={setSelectedJobId}
+        setSelectedCandidateId={setSelectedCandidateId}
+        openCandidateJobDrawer={openCandidateJobDrawer}
+      />
       <Routes>
         <Route path="/" element={<MainLayout error={error} setError={setError} onOpenSmartSearch={() => setSmartSearchModalOpen(true)} onOpenRAG={() => setRAGModalOpen(true)} />}>
           <Route index element={
@@ -301,6 +408,7 @@ const AppContent = () => {
           <Route path="forecast" element={<ForecastPage />} />
           <Route path="agents" element={<AgentPlaygroundPage />} />
           <Route path="autonomous-agents" element={<AutonomousAgentsPage />} />
+          <Route path="agent-inbox" element={<AgentInboxPage />} />
           <Route path="mobility" element={<MobilityPage />} />
           <Route path="governance" element={<GovernancePage />} />
           <Route path="war-room" element={<WarRoomPage />} />

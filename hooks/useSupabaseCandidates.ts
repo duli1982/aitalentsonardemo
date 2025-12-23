@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import type { Job, Candidate } from '../types';
 import { semanticSearchService } from '../services/SemanticSearchService';
 import { supabase } from '../services/supabaseClient';
+import { degradedModeService } from '../services/DegradedModeService';
+import { notConfigured, unknown, upstream } from '../services/errorHandling';
 
 export interface SupabaseCandidateResult {
     id: string;
@@ -74,12 +76,14 @@ export const useSupabaseCandidates = (
         // Build cache key
         const cacheKey = `candidates_${job.id}_${threshold}_${effectiveLimit}_${experienceLevel}_${location}_${requiredSkills?.join(',')}`;
 
-        // Check cache first
+        // Check cache first (also keep stale cache for fail-open fallback)
+        let staleCache: { data: SupabaseCandidateResult[]; timestamp: number } | null = null;
         try {
             const cached = localStorage.getItem(cacheKey);
             if (cached) {
                 const { data, timestamp } = JSON.parse(cached);
                 const age = Date.now() - timestamp;
+                staleCache = { data, timestamp };
                 // Cache valid for 5 minutes
                 if (age < 5 * 60 * 1000) {
                     console.log(`[useSupabaseCandidates] Using cached results for job ${job.id}`);
@@ -102,15 +106,35 @@ export const useSupabaseCandidates = (
             console.log(`[useSupabaseCandidates] Searching for: "${searchQuery}" (limit: ${effectiveLimit})`);
 
             // Use semantic search to find matching candidates
-            const results = await semanticSearchService.search(searchQuery, {
+            const searchResult = await semanticSearchService.search(searchQuery, {
                 threshold,
                 limit: effectiveLimit
             });
 
+            const results = searchResult.success ? searchResult.data : searchResult.data ?? [];
+
+            if (!searchResult.success) {
+                degradedModeService.report({
+                    feature: 'supabase_candidates',
+                    error: searchResult.error,
+                    retryAfterMs: searchResult.retryAfterMs,
+                    lastUpdatedAt: staleCache?.timestamp ? new Date(staleCache.timestamp).toISOString() : new Date().toISOString(),
+                    jobId: String(job.id),
+                    whatMightBeMissing: 'Candidate matches may be incomplete (showing cached or partial results).',
+                    input: { jobId: job.id, threshold, limit: effectiveLimit, experienceLevel, location, requiredSkills }
+                });
+
+                if (staleCache?.data?.length) {
+                    setCandidates(staleCache.data);
+                    setHasMore(staleCache.data.length === effectiveLimit);
+                    return;
+                }
+            }
+
             console.log(`[useSupabaseCandidates] Found ${results.length} candidates`);
 
             // Enrich candidates with graph relationships
-            const enrichedCandidates = await enrichWithGraphData(results, job);
+            const enrichedCandidates = await enrichWithGraphData(results, job, String(job.id));
 
             // Apply filters
             let filteredCandidates = enrichedCandidates;
@@ -156,8 +180,23 @@ export const useSupabaseCandidates = (
             }
         } catch (err) {
             console.error('[useSupabaseCandidates] Error fetching candidates:', err);
-            setError(err instanceof Error ? err : new Error('Failed to fetch candidates'));
-            setCandidates([]);
+            const appErr = unknown('useSupabaseCandidates', 'Candidate fetch threw unexpectedly.', err);
+            degradedModeService.report({
+                feature: 'supabase_candidates',
+                error: appErr,
+                lastUpdatedAt: staleCache?.timestamp ? new Date(staleCache.timestamp).toISOString() : new Date().toISOString(),
+                jobId: job ? String(job.id) : undefined,
+                whatMightBeMissing: 'Candidate matches may be incomplete (showing cached or partial results).',
+                input: { jobId: job?.id, threshold, limit: effectiveLimit, experienceLevel, location, requiredSkills }
+            });
+
+            setError(new Error(appErr.message));
+            if (staleCache?.data?.length) {
+                setCandidates(staleCache.data);
+                setHasMore(staleCache.data.length === effectiveLimit);
+            } else {
+                setCandidates([]);
+            }
         } finally {
             setIsLoading(false);
         }
@@ -193,9 +232,17 @@ export const useSupabaseCandidates = (
  */
 async function enrichWithGraphData(
     results: any[],
-    job: Job | null
+    job: Job | null,
+    jobId?: string
 ): Promise<SupabaseCandidateResult[]> {
     if (!supabase) {
+        degradedModeService.report({
+            feature: 'supabase_candidates',
+            error: notConfigured('useSupabaseCandidates', 'Supabase is not configured.'),
+            lastUpdatedAt: new Date().toISOString(),
+            jobId,
+            whatMightBeMissing: 'Company/school enrichment is unavailable; filters may be incomplete.'
+        });
         // Fallback: return basic transformation without graph data
         return results.map(result => ({
             id: result.id,
@@ -290,6 +337,13 @@ async function enrichWithGraphData(
         });
     } catch (error) {
         console.error('[enrichWithGraphData] Error fetching graph data:', error);
+        degradedModeService.report({
+            feature: 'supabase_candidates',
+            error: upstream('useSupabaseCandidates', 'Failed to fetch graph enrichment data.', error),
+            lastUpdatedAt: new Date().toISOString(),
+            jobId,
+            whatMightBeMissing: 'Company/school enrichment may be missing; match reasons may be less specific.'
+        });
         // Return basic transformation on error
         return results.map(result => ({
             id: result.id,

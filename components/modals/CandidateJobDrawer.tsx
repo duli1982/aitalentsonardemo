@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { Candidate, Job, PipelineStage } from '../../types';
 import { X, Briefcase, MapPin, Layers, ArrowRight, UserX, Calendar, Sparkles, ExternalLink } from 'lucide-react';
 import ScheduleInterviewModal from './ScheduleInterviewModal';
@@ -7,6 +7,9 @@ import { pipelineEventService, type PipelineEventRecord } from '../../services/P
 import { recruitingScorecardService, type RecruitingScorecardRecord } from '../../services/RecruitingScorecardService';
 import { determineNextAction } from '../../services/NextActionService';
 import { autonomousScreeningAgent } from '../../services/AutonomousScreeningAgent';
+import { useEscapeKey } from '../../hooks/useEscapeKey';
+import GraphExplorer from '../GraphExplorer';
+import { useSupabaseCandidates } from '../../hooks/useSupabaseCandidates';
 
 type DrawerTab = 'summary' | 'evidence' | 'artifacts' | 'timeline';
 
@@ -47,6 +50,15 @@ function difference(a: string[], b: string[]): string[] {
   return a.filter((v) => !bSet.has(v.toLowerCase()));
 }
 
+function levelLabel(level: number): string {
+  const l = Number(level);
+  if (l >= 5) return 'Expert';
+  if (l === 4) return 'Advanced';
+  if (l === 3) return 'Intermediate';
+  if (l === 2) return 'Working';
+  return 'Beginner';
+}
+
 export interface CandidateJobDrawerProps {
   isOpen: boolean;
   candidate: Candidate | null;
@@ -66,12 +78,62 @@ const CandidateJobDrawer: React.FC<CandidateJobDrawerProps> = ({
   onUpdateCandidateStage,
   onOpenCandidateProfile
 }) => {
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const [tab, setTab] = useState<DrawerTab>('summary');
   const [artifacts, setArtifacts] = useState<DecisionArtifactRecord[]>([]);
   const [events, setEvents] = useState<PipelineEventRecord[]>([]);
   const [scorecard, setScorecard] = useState<RecruitingScorecardRecord | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
+  const [graphOpen, setGraphOpen] = useState(false);
+
+  useEscapeKey({ active: isOpen, onEscape: onClose });
+
+  useEffect(() => {
+    if (!isOpen) return;
+    closeButtonRef.current?.focus();
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    // Keep Graph Insights opt-in (safe mode).
+    setGraphOpen(false);
+  }, [isOpen, candidate?.id, job?.id]);
+
+  const graphCandidatesEnabled = Boolean(isOpen && tab === 'evidence' && graphOpen);
+
+  const { candidates: graphMatches, isLoading: graphLoading } = useSupabaseCandidates(job, {
+    enabled: graphCandidatesEnabled,
+    limit: 50,
+    threshold: 0.3
+  });
+
+  const graphCandidates = useMemo((): Candidate[] => {
+    const base: Candidate[] = [];
+    if (candidate) base.push(candidate);
+
+    const fromMatches = (graphMatches || []).map((c: any) => ({
+      id: String(c.id),
+      name: c.name || 'Unknown',
+      email: c.email || '',
+      type: 'uploaded' as const,
+      skills: Array.isArray(c.skills) ? c.skills : [],
+      role: (c as any).role || 'Candidate',
+      experience: Number((c as any).experienceYears ?? 0) || 0,
+      location: (c as any).location || '',
+      availability: ''
+    })) as Candidate[];
+
+    // Dedupe by id; keep current candidate first.
+    const seen = new Set(base.map((c) => c.id));
+    fromMatches.forEach((c) => {
+      if (seen.has(c.id)) return;
+      seen.add(c.id);
+      base.push(c);
+    });
+
+    return base;
+  }, [candidate, graphMatches]);
 
   const matchScore = useMemo(() => {
     if (!candidate || !job) return undefined;
@@ -90,6 +152,27 @@ const CandidateJobDrawer: React.FC<CandidateJobDrawerProps> = ({
   const candidateSkills = useMemo(() => (candidate?.skills || []).filter(Boolean), [candidate]);
   const matchedSkills = useMemo(() => intersection(candidateSkills, requiredSkills).slice(0, 12), [candidateSkills, requiredSkills]);
   const missingSkills = useMemo(() => difference(requiredSkills, candidateSkills).slice(0, 12), [candidateSkills, requiredSkills]);
+
+  const verifiedPassport = useMemo(() => {
+    const fromCandidate = (candidate as any)?.passport;
+    const fromMeta = (candidate as any)?.metadata?.passport;
+    return fromCandidate ?? fromMeta ?? null;
+  }, [candidate]);
+
+  const verifiedSkills = useMemo(() => {
+    const list = verifiedPassport?.verifiedSkills;
+    return Array.isArray(list) ? list : [];
+  }, [verifiedPassport]);
+
+  const verifiedBadges = useMemo(() => {
+    const list = verifiedPassport?.badges;
+    return Array.isArray(list) ? list : [];
+  }, [verifiedPassport]);
+
+  const assessmentHistory = useMemo(() => {
+    const list = (candidate as any)?.metadata?.assessmentHistory;
+    return Array.isArray(list) ? list : [];
+  }, [candidate]);
 
   const nextAction = useMemo(() => {
     if (!candidate || !job) return null;
@@ -186,6 +269,9 @@ const CandidateJobDrawer: React.FC<CandidateJobDrawerProps> = ({
       <div
         className="h-full w-full sm:w-[620px] bg-slate-900 border-l border-slate-700 shadow-2xl flex flex-col"
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Candidate pipeline details: ${candidate.name}`}
       >
         <div className="p-5 border-b border-slate-700 bg-slate-900/60">
           <div className="flex items-start justify-between gap-3">
@@ -212,8 +298,9 @@ const CandidateJobDrawer: React.FC<CandidateJobDrawerProps> = ({
               </div>
             </div>
             <button
+              ref={closeButtonRef}
               onClick={onClose}
-              className="p-2 rounded-lg border border-slate-700 bg-slate-900/30 text-slate-200 hover:bg-slate-900/60"
+              className="p-2 rounded-lg border border-slate-700 bg-slate-900/30 text-slate-200 hover:bg-slate-900/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
               aria-label="Close"
             >
               <X className="h-4 w-4" />
@@ -313,6 +400,86 @@ const CandidateJobDrawer: React.FC<CandidateJobDrawerProps> = ({
               </div>
 
               <div className="bg-slate-800/40 border border-slate-700 rounded-xl p-4">
+                <div className="text-sm font-semibold text-slate-100 mb-2">Verified Skills (Assessments)</div>
+                {verifiedSkills.length === 0 ? (
+                  <div className="text-xs text-slate-400">
+                    No verified skills recorded yet. Record an assessment and apply the proposal from Agent Inbox.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap gap-2">
+                      {verifiedBadges.slice(0, 8).map((b: string) => (
+                        <span
+                          key={b}
+                          className="inline-flex items-center px-2 py-1 rounded-full text-[10px] bg-purple-500/10 border border-purple-500/20 text-purple-200"
+                        >
+                          {b}
+                        </span>
+                      ))}
+                    </div>
+
+                    <div className="space-y-2">
+                      {verifiedSkills
+                        .slice()
+                        .sort((a: any, b: any) => Number(b?.proficiencyLevel ?? 0) - Number(a?.proficiencyLevel ?? 0))
+                        .slice(0, 10)
+                        .map((s: any) => (
+                          <div key={`${s.skillName}_${s.verifiedAt || ''}`} className="bg-slate-900/40 border border-slate-700 rounded-lg p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-sm font-semibold text-white truncate">{s.skillName}</div>
+                                <div className="text-[11px] text-slate-400 mt-1">
+                                  Level {Number(s.proficiencyLevel ?? 0)}/5 • {levelLabel(Number(s.proficiencyLevel ?? 0))}
+                                  {s.source ? ` • ${s.source}` : ''}
+                                </div>
+                              </div>
+                              <div className="text-right text-[11px] text-slate-400 whitespace-nowrap">
+                                {formatDateTime(s.verifiedAt)}
+                              </div>
+                            </div>
+
+                            {s.evidenceLink ? (
+                              <a
+                                href={s.evidenceLink}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="mt-2 inline-flex items-center gap-2 text-xs text-sky-300 hover:text-sky-200"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <ExternalLink className="h-3 w-3" />
+                                Evidence
+                              </a>
+                            ) : null}
+                          </div>
+                        ))}
+                    </div>
+
+                    {assessmentHistory.length ? (
+                      <div className="pt-2 border-t border-slate-700">
+                        <div className="text-xs font-semibold text-slate-200 mb-2">Recent assessments</div>
+                        <div className="space-y-2">
+                          {assessmentHistory.slice(0, 3).map((a: any) => (
+                            <div key={a.id ?? `${a.title}_${a.dateCompleted || ''}`} className="text-[11px] text-slate-300 bg-slate-900/40 border border-slate-700 rounded-lg p-2">
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                  <span className="font-semibold text-white">{a.title || 'Assessment'}</span>
+                                  {typeof a.score === 'number' ? <span className="text-slate-400"> • {a.score}/100</span> : null}
+                                </div>
+                                <div className="text-slate-500 whitespace-nowrap">{formatDateTime(a.dateCompleted)}</div>
+                              </div>
+                              {Array.isArray(a.skillsValidated) && a.skillsValidated.length ? (
+                                <div className="text-slate-400 mt-1 line-clamp-1">{a.skillsValidated.slice(0, 10).join(', ')}</div>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-slate-800/40 border border-slate-700 rounded-xl p-4">
                 <div className="text-sm font-semibold text-slate-100 mb-2">Latest Decisions</div>
                 <div className="grid grid-cols-1 gap-3">
                   {[{ label: 'Shortlist', art: shortlistArtifact }, { label: 'Screening', art: screeningArtifact }, { label: 'Interview', art: interviewArtifact }].map(({ label, art }) => (
@@ -338,31 +505,68 @@ const CandidateJobDrawer: React.FC<CandidateJobDrawerProps> = ({
           )}
 
           {tab === 'evidence' && (
-            <div className="bg-slate-800/40 border border-slate-700 rounded-xl p-4">
-              <div className="text-sm font-semibold text-slate-100 mb-3">Semantic Evidence</div>
-              <div className="text-xs text-slate-400 mb-2">Matched skills</div>
-              <div className="flex flex-wrap gap-2 mb-4">
-                {matchedSkills.length ? (
-                  matchedSkills.map((s) => (
-                    <span key={s} className="text-[11px] px-2 py-1 rounded-full bg-green-500/10 border border-green-500/25 text-green-200">
-                      {s}
-                    </span>
-                  ))
-                ) : (
-                  <div className="text-xs text-slate-500">No exact skill overlap detected.</div>
-                )}
+            <div className="space-y-4">
+              <div className="bg-slate-800/40 border border-slate-700 rounded-xl p-4">
+                <div className="text-sm font-semibold text-slate-100 mb-3">Semantic Evidence</div>
+                <div className="text-xs text-slate-400 mb-2">Matched skills</div>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {matchedSkills.length ? (
+                    matchedSkills.map((s) => (
+                      <span key={s} className="text-[11px] px-2 py-1 rounded-full bg-green-500/10 border border-green-500/25 text-green-200">
+                        {s}
+                      </span>
+                    ))
+                  ) : (
+                    <div className="text-xs text-slate-500">No exact skill overlap detected.</div>
+                  )}
+                </div>
+
+                <div className="text-xs text-slate-400 mb-2">Missing required skills</div>
+                <div className="flex flex-wrap gap-2">
+                  {missingSkills.length ? (
+                    missingSkills.map((s) => (
+                      <span key={s} className="text-[11px] px-2 py-1 rounded-full bg-red-500/10 border border-red-500/25 text-red-200">
+                        {s}
+                      </span>
+                    ))
+                  ) : (
+                    <div className="text-xs text-slate-500">No gaps found against required skills.</div>
+                  )}
+                </div>
               </div>
 
-              <div className="text-xs text-slate-400 mb-2">Missing required skills</div>
-              <div className="flex flex-wrap gap-2">
-                {missingSkills.length ? (
-                  missingSkills.map((s) => (
-                    <span key={s} className="text-[11px] px-2 py-1 rounded-full bg-red-500/10 border border-red-500/25 text-red-200">
-                      {s}
-                    </span>
-                  ))
+              <div className="bg-slate-800/40 border border-slate-700 rounded-xl p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-100">Graph Insights (Beta)</div>
+                    <div className="text-xs text-slate-400 mt-1">
+                      Read-only explanation layer. Uses cached match lists when available.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setGraphOpen((v) => !v)}
+                    className={`px-3 py-2 rounded-lg border text-xs font-semibold transition-colors ${
+                      graphOpen
+                        ? 'bg-sky-500/15 text-sky-200 border-sky-500/40'
+                        : 'bg-slate-900/30 text-slate-200 border-slate-700 hover:bg-slate-900/60'
+                    }`}
+                  >
+                    {graphOpen ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+
+                {graphOpen ? (
+                  <div className="mt-4">
+                    {graphLoading ? (
+                      <div className="text-xs text-slate-400">Loading graph cohort…</div>
+                    ) : null}
+                    {job ? <GraphExplorer job={job} candidates={graphCandidates} /> : null}
+                  </div>
                 ) : (
-                  <div className="text-xs text-slate-500">No gaps found against required skills.</div>
+                  <div className="mt-3 text-xs text-slate-500">
+                    Turn this on to see relationship-based explanations alongside semantic evidence.
+                  </div>
                 )}
               </div>
             </div>

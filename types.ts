@@ -32,7 +32,7 @@ export interface Candidate {
     university?: string;
   };
   passport?: {
-    verifiedSkills: { skillName: string; proficiencyLevel: number; verifiedAt: string; source: string; }[];
+    verifiedSkills: { skillName: string; proficiencyLevel: number; verifiedAt: string; source: string; confidenceScore?: number; evidenceLink?: string; }[];
     badges: string[];
   };
 }
@@ -123,7 +123,20 @@ export interface InterviewGuide {
 }
 
 // --- NEW TYPES ---
-export type AppView = 'jobs' | 'candidates' | 'insights' | 'pipeline' | 'org-twin' | 'health' | 'forecast' | 'agents' | 'autonomous-agents' | 'mobility' | 'governance' | 'war-room';
+export type AppView =
+  | 'jobs'
+  | 'candidates'
+  | 'insights'
+  | 'pipeline'
+  | 'org-twin'
+  | 'health'
+  | 'forecast'
+  | 'agents'
+  | 'autonomous-agents'
+  | 'agent-inbox'
+  | 'mobility'
+  | 'governance'
+  | 'war-room';
 
 export interface DepartmentInsight {
   department: string;

@@ -11,6 +11,8 @@ import { eventBus, EVENTS } from '../utils/EventBus';
 import { decisionArtifactService } from './DecisionArtifactService';
 import { pipelineEventService } from './PipelineEventService';
 import { processingMarkerService } from './ProcessingMarkerService';
+import type { AgentMode } from './AgentSettingsService';
+import { proposedActionService } from './ProposedActionService';
 
 export interface ScreeningCandidate {
     candidateId: string;
@@ -45,6 +47,7 @@ class AutonomousScreeningAgent {
     private screeningQueue: ScreeningCandidate[] = [];
     private screeningResults: ScreeningResult[] = [];
     private isInitialized = false;
+    private mode: AgentMode = 'recommend';
     private readonly storageKey = 'autonomous_screening_results_v1';
     private readonly maxStoredResults = 500;
 
@@ -90,7 +93,7 @@ class AutonomousScreeningAgent {
      * Initialize the screening agent
      * Runs every 4 hours to screen candidates
      */
-    initialize() {
+    initialize(options?: { enabled?: boolean; mode?: AgentMode }) {
         if (this.isInitialized) {
             console.log('[AutonomousScreeningAgent] Already initialized');
             return;
@@ -98,12 +101,13 @@ class AutonomousScreeningAgent {
 
         console.log('[AutonomousScreeningAgent] Initializing autonomous screening...');
         this.loadPersistedResults();
+        this.mode = options?.mode ?? 'recommend';
 
         this.jobId = backgroundJobService.registerJob({
             name: 'Autonomous Candidate Screening',
             type: 'SCREENING',
             interval: 4 * 60 * 60 * 1000, // 4 hours
-            enabled: true,
+            enabled: options?.enabled ?? false,
             handler: async () => {
                 await this.processScreeningQueue();
             }
@@ -226,27 +230,64 @@ class AutonomousScreeningAgent {
 
                     if (!moved) continue;
 
-                    eventBus.emit(EVENTS.CANDIDATE_STAGED, {
-                        candidateId: candidate.candidateId,
-                        candidateName: candidate.candidateName,
-                        jobId: candidate.jobId,
-                        stage: 'long_list',
-                        source: 'screening-agent',
-                        recommendation: result.recommendation,
-                        score: result.score
-                    });
+                    if (this.mode === 'auto_write') {
+                        eventBus.emit(EVENTS.CANDIDATE_STAGED, {
+                            candidateId: candidate.candidateId,
+                            candidateName: candidate.candidateName,
+                            jobId: candidate.jobId,
+                            stage: 'long_list',
+                            source: 'screening-agent',
+                            recommendation: result.recommendation,
+                            score: result.score
+                        });
+                    } else {
+                        proposedActionService.add({
+                            agentType: 'SCREENING',
+                            title: 'Move Stage',
+                            description: `${candidate.candidateName} for "${candidate.jobTitle}" • Screening ${result.recommendation} (${result.score}/100).`,
+                            candidateId: candidate.candidateId,
+                            jobId: candidate.jobId,
+                            payload: {
+                                type: 'MOVE_CANDIDATE_TO_STAGE',
+                                candidate: {
+                                    id: candidate.candidateId,
+                                    name: candidate.candidateName,
+                                    email: candidate.candidateEmail,
+                                    role: 'Candidate',
+                                    type: 'uploaded',
+                                    skills: [],
+                                    experience: 0,
+                                    location: '',
+                                    availability: ''
+                                } as any,
+                                jobId: candidate.jobId,
+                                stage: 'long_list'
+                            },
+                            evidence: [{ label: 'Screening', value: `${result.recommendation} (${result.score}/100)` }]
+                        });
+
+                        pulseService.addEvent({
+                            type: 'AGENT_ACTION',
+                            severity: 'info',
+                            message: `Proposal created: Move ${candidate.candidateName} → Long List after screening (${result.score}/100).`,
+                            metadata: { agentType: 'SCREENING', candidateId: candidate.candidateId, jobId: candidate.jobId, actionLink: '/agent-inbox' }
+                        });
+                    }
 
                     void pipelineEventService.logEvent({
                         candidateId: candidate.candidateId,
                         candidateName: candidate.candidateName,
                         jobId: candidate.jobId,
                         jobTitle: candidate.jobTitle,
-                        eventType: 'STAGE_MOVED',
+                        eventType: this.mode === 'auto_write' ? 'STAGE_MOVED' : 'ACTION_PROPOSED',
                         actorType: 'agent',
                         actorId: 'screening-agent',
                         fromStage: 'screening',
                         toStage: 'long_list',
-                        summary: `Auto-moved to Long List after screening: ${result.recommendation} (${result.score}/100).`,
+                        summary:
+                            this.mode === 'auto_write'
+                                ? `Auto-moved to Long List after screening: ${result.recommendation} (${result.score}/100).`
+                                : `Proposed: Move to Long List after screening: ${result.recommendation} (${result.score}/100).`,
                         metadata: {
                             recommendation: result.recommendation,
                             score: result.score
@@ -271,27 +312,64 @@ class AutonomousScreeningAgent {
 
                     if (!moved) continue;
 
-                    eventBus.emit(EVENTS.CANDIDATE_STAGED, {
-                        candidateId: candidate.candidateId,
-                        candidateName: candidate.candidateName,
-                        jobId: candidate.jobId,
-                        stage: 'rejected',
-                        source: 'screening-agent',
-                        recommendation: result.recommendation,
-                        score: result.score
-                    });
+                    if (this.mode === 'auto_write') {
+                        eventBus.emit(EVENTS.CANDIDATE_STAGED, {
+                            candidateId: candidate.candidateId,
+                            candidateName: candidate.candidateName,
+                            jobId: candidate.jobId,
+                            stage: 'rejected',
+                            source: 'screening-agent',
+                            recommendation: result.recommendation,
+                            score: result.score
+                        });
+                    } else {
+                        proposedActionService.add({
+                            agentType: 'SCREENING',
+                            title: 'Move Stage',
+                            description: `${candidate.candidateName} for "${candidate.jobTitle}" • Screening FAIL (${result.score}/100).`,
+                            candidateId: candidate.candidateId,
+                            jobId: candidate.jobId,
+                            payload: {
+                                type: 'MOVE_CANDIDATE_TO_STAGE',
+                                candidate: {
+                                    id: candidate.candidateId,
+                                    name: candidate.candidateName,
+                                    email: candidate.candidateEmail,
+                                    role: 'Candidate',
+                                    type: 'uploaded',
+                                    skills: [],
+                                    experience: 0,
+                                    location: '',
+                                    availability: ''
+                                } as any,
+                                jobId: candidate.jobId,
+                                stage: 'rejected'
+                            },
+                            evidence: [{ label: 'Screening', value: `FAIL (${result.score}/100)` }]
+                        });
+
+                        pulseService.addEvent({
+                            type: 'AGENT_ACTION',
+                            severity: 'warning',
+                            message: `Proposal created: Move ${candidate.candidateName} → Rejected after screening (FAIL ${result.score}/100).`,
+                            metadata: { agentType: 'SCREENING', candidateId: candidate.candidateId, jobId: candidate.jobId, actionLink: '/agent-inbox' }
+                        });
+                    }
 
                     void pipelineEventService.logEvent({
                         candidateId: candidate.candidateId,
                         candidateName: candidate.candidateName,
                         jobId: candidate.jobId,
                         jobTitle: candidate.jobTitle,
-                        eventType: 'STAGE_MOVED',
+                        eventType: this.mode === 'auto_write' ? 'STAGE_MOVED' : 'ACTION_PROPOSED',
                         actorType: 'agent',
                         actorId: 'screening-agent',
                         fromStage: 'screening',
                         toStage: 'rejected',
-                        summary: `Auto-moved to Rejected after screening: FAIL (${result.score}/100).`,
+                        summary:
+                            this.mode === 'auto_write'
+                                ? `Auto-moved to Rejected after screening: FAIL (${result.score}/100).`
+                                : `Proposed: Move to Rejected after screening: FAIL (${result.score}/100).`,
                         metadata: {
                             recommendation: result.recommendation,
                             score: result.score
@@ -559,6 +637,10 @@ class AutonomousScreeningAgent {
 
         backgroundJobService.setJobEnabled(this.jobId, enabled);
         console.log(`[AutonomousScreeningAgent] Agent ${enabled ? 'enabled' : 'disabled'}`);
+    }
+
+    setMode(mode: AgentMode) {
+        this.mode = mode;
     }
 
     /**

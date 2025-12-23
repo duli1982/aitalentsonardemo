@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Calendar, Check, Clock, Copy, Loader2, TrendingUp, X } from 'lucide-react';
 import type { Candidate, Job } from '../../types';
 import { autonomousSchedulingAgent, type MeetingProvider } from '../../services/AutonomousSchedulingAgent';
+import { useToast } from '../../contexts/ToastContext';
 
 type UrgencyLevel = 'low' | 'medium' | 'high';
 
@@ -26,6 +27,7 @@ interface ScheduleInterviewModalProps {
 }
 
 const ScheduleInterviewModal: React.FC<ScheduleInterviewModalProps> = ({ isOpen, onClose, candidate, job }) => {
+    const { showToast } = useToast();
     const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', []);
     const [suggestion, setSuggestion] = useState<InterviewScheduleSuggestion | null>(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -107,7 +109,7 @@ const ScheduleInterviewModal: React.FC<ScheduleInterviewModalProps> = ({ isOpen,
 
     const handleQueueScheduling = async () => {
         if (!candidate.email) {
-            alert('This candidate has no email on file. Add an email to queue scheduling.');
+            showToast('This candidate has no email on file. Add an email to queue scheduling.', 'warning');
             return;
         }
 
@@ -129,7 +131,7 @@ const ScheduleInterviewModal: React.FC<ScheduleInterviewModalProps> = ({ isOpen,
             console.warn('[ScheduleInterviewModal] Failed to trigger scheduling agent processing:', e);
         }
 
-        alert('Scheduling queued. Check Talent Pulse and the candidate’s pipeline stage for updates.');
+        showToast("Scheduling queued. Check Talent Pulse and the candidate's pipeline stage for updates.", 'success', 7000);
     };
 
     if (!isOpen) return null;

@@ -2,6 +2,7 @@ import { aiService } from '../services/AIService';
 import { supabase } from '../services/supabaseClient';
 import { ALL_CANDIDATES } from '../data/candidates';
 import type { Candidate } from '../types';
+import { candidatePersistenceService } from '../services/CandidatePersistenceService';
 
 export interface MigrationProgress {
     total: number;
@@ -55,7 +56,7 @@ export async function migrateAllCandidates(
             const embeddingResult = await aiService.embedText(textContent);
 
             if (!embeddingResult.success || !embeddingResult.data) {
-                throw new Error(`Failed to generate embedding: ${embeddingResult.error}`);
+                throw new Error(`Failed to generate embedding: ${embeddingResult.error.message}`);
             }
 
             // Prepare metadata
@@ -82,17 +83,20 @@ export async function migrateAllCandidates(
             };
 
             // Insert into Supabase
-            const { error } = await supabase
-                .from('candidate_documents')
-                .insert({
-                    content: textContent,
-                    metadata,
-                    embedding: embeddingResult.data
-                });
-
-            if (error) {
-                throw new Error(`Supabase error: ${error.message}`);
-            }
+            await candidatePersistenceService.upsertCandidateAndActiveDocument({
+                candidateId: candidate.id,
+                fullName: candidate.name,
+                email: candidate.email,
+                title: (candidate as any).currentRole || (candidate as any).previousRoleAppliedFor || (candidate as any).role,
+                location: (candidate as any).location,
+                experienceYears: (candidate as any).experienceYears,
+                skills: candidate.skills,
+                candidateMetadata: metadata,
+                documentContent: textContent,
+                documentMetadata: metadata,
+                embedding: embeddingResult.data,
+                source: 'mock_migration'
+            });
 
             progress.successCount++;
         } catch (err) {

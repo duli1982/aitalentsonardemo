@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import type { Candidate, Job, InternalCandidate, PastCandidate, UploadedCandidate } from '../../types';
 import { X, User, Mail, Briefcase, Star, Target, FileText, Calendar, Building2, TrendingUp, Award, ChevronDown, ChevronUp } from 'lucide-react';
+import { useEscapeKey } from '../../hooks/useEscapeKey';
+import { useToast } from '../../contexts/ToastContext';
 
 interface CandidateProfileModalProps {
   isOpen: boolean;
@@ -21,6 +23,15 @@ const CandidateProfileModal: React.FC<CandidateProfileModalProps> = ({
   onInitiateAnalysis,
   onUpdateCandidate
 }) => {
+  const { showToast } = useToast();
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  useEscapeKey({ active: isOpen, onEscape: onClose });
+
+  useEffect(() => {
+    if (!isOpen) return;
+    closeButtonRef.current?.focus();
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const [showAllJobs, setShowAllJobs] = React.useState(false);
@@ -96,6 +107,9 @@ const CandidateProfileModal: React.FC<CandidateProfileModalProps> = ({
       <div
         className="bg-slate-800 shadow-2xl rounded-xl w-full max-w-4xl max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Candidate profile: ${candidate.name}`}
       >
         {/* Header */}
         <div className="flex justify-between items-start p-6 border-b border-slate-700">
@@ -111,8 +125,9 @@ const CandidateProfileModal: React.FC<CandidateProfileModalProps> = ({
             </div>
           </div>
           <button
+            ref={closeButtonRef}
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-200 transition-colors"
+            className="text-gray-400 hover:text-gray-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 rounded"
             aria-label="Close modal"
           >
             <X size={24} />
@@ -427,7 +442,7 @@ const CandidateProfileModal: React.FC<CandidateProfileModalProps> = ({
                   </div>
                 </div>
                 <button
-                  onClick={() => alert('CV viewing would open in a new window or download the file')}
+                  onClick={() => showToast('CV viewing/downloading is not wired up yet in this demo.', 'info')}
                   className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white text-sm font-medium rounded-lg transition-colors"
                 >
                   View CV

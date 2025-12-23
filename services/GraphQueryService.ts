@@ -11,6 +11,9 @@
  */
 
 import { supabase } from './supabaseClient';
+import type { Result } from '../types/result';
+import { err, ok } from '../types/result';
+import { notConfigured, upstream } from './errorHandling';
 
 export interface CompanyNode {
     id: number;
@@ -62,8 +65,8 @@ class GraphQueryService {
     /**
      * Find candidates who worked at a specific company
      */
-    async findCandidatesByCompany(companyName: string): Promise<CandidateRelationship[]> {
-        if (!supabase) return [];
+    async findCandidatesByCompany(companyName: string): Promise<Result<CandidateRelationship[]>> {
+        if (!supabase) return err(notConfigured('GraphQueryService', 'Supabase is not configured.'), { data: [] });
 
         const { data, error } = await supabase
             .from('candidate_companies')
@@ -84,25 +87,24 @@ class GraphQueryService {
             .eq('companies.name', companyName);
 
         if (error || !data) {
-            console.error('[GraphQuery] Error finding candidates by company:', error);
-            return [];
+            return err(upstream('GraphQueryService', 'Error finding candidates by company.', error), { data: [] });
         }
 
-        return data.map(row => ({
+        return ok(data.map(row => ({
             candidate_id: row.candidate_id,
             candidate_name: (row.candidate_documents as any).metadata.name,
             candidate_title: row.title,
             candidate_email: (row.candidate_documents as any).metadata.email,
             relationship_type: 'worked_at',
             relationship_context: `${row.title} at ${companyName} (${row.start_date} - ${row.is_current ? 'Present' : row.end_date})`
-        }));
+        })));
     }
 
     /**
      * Find candidates who studied at a specific school
      */
-    async findCandidatesBySchool(schoolName: string): Promise<CandidateRelationship[]> {
-        if (!supabase) return [];
+    async findCandidatesBySchool(schoolName: string): Promise<Result<CandidateRelationship[]>> {
+        if (!supabase) return err(notConfigured('GraphQueryService', 'Supabase is not configured.'), { data: [] });
 
         const { data, error } = await supabase
             .from('candidate_schools')
@@ -122,25 +124,24 @@ class GraphQueryService {
             .eq('schools.name', schoolName);
 
         if (error || !data) {
-            console.error('[GraphQuery] Error finding candidates by school:', error);
-            return [];
+            return err(upstream('GraphQueryService', 'Error finding candidates by school.', error), { data: [] });
         }
 
-        return data.map(row => ({
+        return ok(data.map(row => ({
             candidate_id: row.candidate_id,
             candidate_name: (row.candidate_documents as any).metadata.name,
             candidate_title: (row.candidate_documents as any).metadata.title,
             candidate_email: (row.candidate_documents as any).metadata.email,
             relationship_type: 'studied_at',
             relationship_context: `${row.degree} in ${row.field_of_study} from ${schoolName} (${row.graduation_year})`
-        }));
+        })));
     }
 
     /**
      * Find candidates with a specific skill
      */
-    async findCandidatesBySkill(skillName: string, minProficiency?: string): Promise<CandidateRelationship[]> {
-        if (!supabase) return [];
+    async findCandidatesBySkill(skillName: string, minProficiency?: string): Promise<Result<CandidateRelationship[]>> {
+        if (!supabase) return err(notConfigured('GraphQueryService', 'Supabase is not configured.'), { data: [] });
 
         let query = supabase
             .from('candidate_skills')
@@ -173,18 +174,17 @@ class GraphQueryService {
         const { data, error } = await query;
 
         if (error || !data) {
-            console.error('[GraphQuery] Error finding candidates by skill:', error);
-            return [];
+            return err(upstream('GraphQueryService', 'Error finding candidates by skill.', error), { data: [] });
         }
 
-        return data.map(row => ({
+        return ok(data.map(row => ({
             candidate_id: row.candidate_id,
             candidate_name: (row.candidate_documents as any).metadata.name,
             candidate_title: (row.candidate_documents as any).metadata.title,
             candidate_email: (row.candidate_documents as any).metadata.email,
             relationship_type: 'has_skill',
             relationship_context: `${skillName} - ${row.proficiency_level} (${row.years_of_experience} years)`
-        }));
+        })));
     }
 
     /**
@@ -194,8 +194,8 @@ class GraphQueryService {
         companies?: string[];
         schools?: string[];
         skills?: string[];
-    }): Promise<CandidateRelationship[]> {
-        if (!supabase) return [];
+    }): Promise<Result<CandidateRelationship[]>> {
+        if (!supabase) return err(notConfigured('GraphQueryService', 'Supabase is not configured.'), { data: [] });
 
         // Start with all candidates
         let candidateIds: Set<string> | null = null;
@@ -234,7 +234,7 @@ class GraphQueryService {
         }
 
         if (!candidateIds || candidateIds.size === 0) {
-            return [];
+            return ok([]);
         }
 
         // Fetch full candidate details
@@ -244,24 +244,24 @@ class GraphQueryService {
             .in('id', Array.from(candidateIds));
 
         if (error || !data) {
-            return [];
+            return err(upstream('GraphQueryService', 'Error loading candidate documents for criteria.', error), { data: [] });
         }
 
-        return data.map(row => ({
+        return ok(data.map(row => ({
             candidate_id: row.id,
             candidate_name: row.metadata.name,
             candidate_title: row.metadata.title,
             candidate_email: row.metadata.email,
             relationship_type: 'multi_criteria',
             relationship_context: `Matches: ${criteria.companies?.join(', ') || ''} ${criteria.schools?.join(', ') || ''} ${criteria.skills?.join(', ') || ''}`
-        }));
+        })));
     }
 
     /**
      * Find common career paths (company transitions)
      */
-    async findCareerPaths(fromCompany?: string, toCompany?: string): Promise<CareerPath[]> {
-        if (!supabase) return [];
+    async findCareerPaths(fromCompany?: string, toCompany?: string): Promise<Result<CareerPath[]>> {
+        if (!supabase) return err(notConfigured('GraphQueryService', 'Supabase is not configured.'), { data: [] });
 
         // This is a complex query - find candidates who worked at multiple companies
         const { data, error } = await supabase.rpc('find_career_transitions', {
@@ -270,32 +270,31 @@ class GraphQueryService {
         });
 
         if (error) {
-            console.warn('[GraphQuery] Career path query not available - function may not exist:', error);
-            return [];
+            return err(upstream('GraphQueryService', 'Career path query not available (RPC missing or failed).', error), { data: [] });
         }
 
-        return data || [];
+        return ok(data || []);
     }
 
     /**
      * Find alumni network (people who went to same school)
      */
-    async findAlumniNetwork(schoolName: string, limit: number = 50): Promise<CandidateRelationship[]> {
+    async findAlumniNetwork(schoolName: string, limit: number = 50): Promise<Result<CandidateRelationship[]>> {
         return this.findCandidatesBySchool(schoolName);
     }
 
     /**
      * Find company alumni network
      */
-    async findCompanyAlumniNetwork(companyName: string, limit: number = 50): Promise<CandidateRelationship[]> {
+    async findCompanyAlumniNetwork(companyName: string, limit: number = 50): Promise<Result<CandidateRelationship[]>> {
         return this.findCandidatesByCompany(companyName);
     }
 
     /**
      * Find skill clusters (skills that frequently appear together)
      */
-    async findSkillClusters(primarySkill: string): Promise<SkillCluster[]> {
-        if (!supabase) return [];
+    async findSkillClusters(primarySkill: string): Promise<Result<SkillCluster[]>> {
+        if (!supabase) return err(notConfigured('GraphQueryService', 'Supabase is not configured.'), { data: [] });
 
         // Find candidates with the primary skill
         const { data: primarySkillData } = await supabase
@@ -304,7 +303,7 @@ class GraphQueryService {
             .eq('skills.name', primarySkill);
 
         if (!primarySkillData || primarySkillData.length === 0) {
-            return [];
+            return ok([]);
         }
 
         const candidateIds = primarySkillData.map(row => row.candidate_id);
@@ -317,7 +316,7 @@ class GraphQueryService {
             .neq('skills.name', primarySkill);
 
         if (!relatedSkillsData) {
-            return [];
+            return ok([]);
         }
 
         // Count skill occurrences
@@ -332,18 +331,18 @@ class GraphQueryService {
             .sort(([, a], [, b]) => b - a)
             .slice(0, 10);
 
-        return [{
+        return ok([{
             primary_skill: primarySkill,
             related_skills: sortedSkills.map(([skill]) => skill),
             candidate_count: candidateIds.length
-        }];
+        }]);
     }
 
     /**
      * Find 2nd degree connections (people in your network's network)
      */
-    async find2ndDegreeConnections(candidateId: string): Promise<CandidateRelationship[]> {
-        if (!supabase) return [];
+    async find2ndDegreeConnections(candidateId: string): Promise<Result<CandidateRelationship[]>> {
+        if (!supabase) return err(notConfigured('GraphQueryService', 'Supabase is not configured.'), { data: [] });
 
         // Find companies the candidate worked at
         const { data: companies } = await supabase
@@ -352,7 +351,7 @@ class GraphQueryService {
             .eq('candidate_id', candidateId);
 
         if (!companies || companies.length === 0) {
-            return [];
+            return ok([]);
         }
 
         const companyIds = companies.map(c => c.company_id);
@@ -371,24 +370,24 @@ class GraphQueryService {
             .limit(50);
 
         if (!connections) {
-            return [];
+            return ok([]);
         }
 
-        return connections.map(row => ({
+        return ok(connections.map(row => ({
             candidate_id: row.candidate_id,
             candidate_name: (row.candidate_documents as any).metadata.name,
             candidate_title: row.title,
             candidate_email: (row.candidate_documents as any).metadata.email,
             relationship_type: '2nd_degree',
             relationship_context: `Both worked at ${(row.companies as any).name}`
-        }));
+        })));
     }
 
     /**
      * Get all companies in the graph
      */
-    async getAllCompanies(): Promise<CompanyNode[]> {
-        if (!supabase) return [];
+    async getAllCompanies(): Promise<Result<CompanyNode[]>> {
+        if (!supabase) return err(notConfigured('GraphQueryService', 'Supabase is not configured.'), { data: [] });
 
         const { data, error } = await supabase
             .from('companies')
@@ -396,17 +395,17 @@ class GraphQueryService {
             .order('name');
 
         if (error || !data) {
-            return [];
+            return err(upstream('GraphQueryService', 'Error loading companies.', error), { data: [] });
         }
 
-        return data;
+        return ok(data);
     }
 
     /**
      * Get all schools in the graph
      */
-    async getAllSchools(): Promise<SchoolNode[]> {
-        if (!supabase) return [];
+    async getAllSchools(): Promise<Result<SchoolNode[]>> {
+        if (!supabase) return err(notConfigured('GraphQueryService', 'Supabase is not configured.'), { data: [] });
 
         const { data, error } = await supabase
             .from('schools')
@@ -414,17 +413,17 @@ class GraphQueryService {
             .order('name');
 
         if (error || !data) {
-            return [];
+            return err(upstream('GraphQueryService', 'Error loading schools.', error), { data: [] });
         }
 
-        return data;
+        return ok(data);
     }
 
     /**
      * Get all skills in the graph
      */
-    async getAllSkills(): Promise<SkillNode[]> {
-        if (!supabase) return [];
+    async getAllSkills(): Promise<Result<SkillNode[]>> {
+        if (!supabase) return err(notConfigured('GraphQueryService', 'Supabase is not configured.'), { data: [] });
 
         const { data, error } = await supabase
             .from('skills')
@@ -432,30 +431,32 @@ class GraphQueryService {
             .order('name');
 
         if (error || !data) {
-            return [];
+            return err(upstream('GraphQueryService', 'Error loading skills.', error), { data: [] });
         }
 
-        return data;
+        return ok(data);
     }
 
     /**
      * Get graph statistics
      */
-    async getGraphStats(): Promise<{
+    async getGraphStats(): Promise<Result<{
         totalCandidates: number;
         totalCompanies: number;
         totalSchools: number;
         totalSkills: number;
         totalRelationships: number;
-    }> {
-        if (!supabase) {
-            return {
+    }>> {
+        const safe = {
                 totalCandidates: 0,
                 totalCompanies: 0,
                 totalSchools: 0,
                 totalSkills: 0,
                 totalRelationships: 0
             };
+
+        if (!supabase) {
+            return err(notConfigured('GraphQueryService', 'Supabase is not configured.'), { data: safe });
         }
 
         const [candidates, companies, schools, skills, companyRelations, schoolRelations, skillRelations] = await Promise.all([
@@ -468,13 +469,23 @@ class GraphQueryService {
             supabase.from('candidate_skills').select('candidate_id', { count: 'exact', head: true })
         ]);
 
-        return {
+        const anyError =
+            candidates.error || companies.error || schools.error || skills.error ||
+            companyRelations.error || schoolRelations.error || skillRelations.error;
+
+        const data = {
             totalCandidates: candidates.count || 0,
             totalCompanies: companies.count || 0,
             totalSchools: schools.count || 0,
             totalSkills: skills.count || 0,
             totalRelationships: (companyRelations.count || 0) + (schoolRelations.count || 0) + (skillRelations.count || 0)
         };
+
+        if (anyError) {
+            return err(upstream('GraphQueryService', 'Error loading graph stats.', anyError), { data });
+        }
+
+        return ok(data);
     }
 }
 

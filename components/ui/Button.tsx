@@ -48,6 +48,7 @@ const Button: React.FC<ButtonProps> = ({
                 font-semibold rounded-lg
                 transition-all duration-200
                 disabled:opacity-50 disabled:cursor-not-allowed
+                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900
                 ${variantStyles[variant]}
                 ${sizeStyles[size]}
                 ${className}

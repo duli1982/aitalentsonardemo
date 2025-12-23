@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Candidate } from '../types';
 import { supabase } from '../services/supabaseClient';
+import { degradedModeService } from '../services/DegradedModeService';
+import { upstream } from '../services/errorHandling';
 
 export interface AllCandidatesOptions {
     enabled?: boolean;
@@ -51,13 +53,29 @@ export const useAllSupabaseCandidates = (options: AllCandidatesOptions = {}) => 
         try {
             console.log(`[useAllSupabaseCandidates] Fetching ${currentLimit} candidates from Supabase...`);
 
-            // Fetch candidates from Supabase
-            // Note: candidate_documents stores all data in metadata JSON column
-            const { data: candidatesData, error: candidatesError } = await supabase
-                .from('candidate_documents')
-                .select('id, metadata, content')
-                .order('id', { ascending: false })
+            // Preferred: canonical read model view (candidates -> active document)
+            // Fallback: candidate_documents legacy schema.
+            let candidatesData: any[] | null = null;
+            let candidatesError: any = null;
+
+            const viewAttempt = await supabase
+                .from('candidate_documents_view')
+                .select('candidate_id, name, email, title, location, experience_years, skills, document_id, content, document_metadata, candidate_updated_at')
+                .order('candidate_updated_at', { ascending: false })
                 .limit(currentLimit);
+
+            if (viewAttempt.error) {
+                const legacyAttempt = await supabase
+                    .from('candidate_documents')
+                    .select('id, metadata, content')
+                    .order('id', { ascending: false })
+                    .limit(currentLimit);
+                candidatesData = legacyAttempt.data as any[] | null;
+                candidatesError = legacyAttempt.error;
+            } else {
+                candidatesData = viewAttempt.data as any[] | null;
+                candidatesError = null;
+            }
 
             if (candidatesError) throw candidatesError;
 
@@ -71,16 +89,24 @@ export const useAllSupabaseCandidates = (options: AllCandidatesOptions = {}) => 
             console.log(`[useAllSupabaseCandidates] Found ${candidatesData.length} candidates`);
 
             const parsedCandidates = candidatesData.map((row: any) => {
-                const metadata = row.metadata || {};
+                const isViewRow = row.candidate_id !== undefined;
+                const rawMetadata = isViewRow ? row.document_metadata : row.metadata;
+                const metadata = rawMetadata || {};
                 const content = typeof row.content === 'string' ? row.content : '';
                 const nameFromContent = content.includes(' - ') ? content.split(' - ')[0].trim() : '';
 
-                const name = metadata.name || metadata.full_name || nameFromContent || 'Unknown';
-                const email = metadata.email || '';
-                const skills = Array.isArray(metadata.skills) ? metadata.skills : [];
+                const id = String(isViewRow ? row.candidate_id : (metadata.id || row.id));
+                const name = row.name || metadata.name || metadata.full_name || nameFromContent || 'Unknown';
+                const email = row.email || metadata.email || '';
+
+                const rawSkills = row.skills ?? metadata.skills;
+                const skills =
+                    Array.isArray(rawSkills) ? rawSkills.map((s) => String(s)) :
+                        Array.isArray(rawSkills?.data) ? rawSkills.data.map((s: any) => String(s)) :
+                            [];
 
                 return {
-                    id: String(row.id),
+                    id,
                     metadata,
                     name,
                     email,
@@ -167,6 +193,12 @@ export const useAllSupabaseCandidates = (options: AllCandidatesOptions = {}) => 
             }
         } catch (err) {
             console.error('[useAllSupabaseCandidates] Error fetching candidates:', err);
+            degradedModeService.report({
+                feature: 'all_supabase_candidates',
+                error: upstream('useAllSupabaseCandidates', 'Failed to load candidates list.', err),
+                lastUpdatedAt: new Date().toISOString(),
+                whatMightBeMissing: 'Candidate list may be incomplete or unavailable.'
+            });
             setError(err instanceof Error ? err : new Error('Failed to fetch candidates'));
             setCandidates([]);
         } finally {

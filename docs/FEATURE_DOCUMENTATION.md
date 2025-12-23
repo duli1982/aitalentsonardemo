@@ -46,6 +46,7 @@ This application now includes advanced AI features powered by:
 | **Sourcing Agent** | Auto-find candidates matching jobs | ✅ Live |
 | **Screening Agent** | Conduct automated phone screens | ✅ Live |
 | **Scheduling Agent** | Auto-book interview times | ✅ Live |
+| **Fairness (Pipeline Cohorts)** | Aggregate-only fairness by job + stage + window (no per-candidate demographics) | ✅ Live |
 
 ---
 
@@ -93,6 +94,22 @@ Supabase PostgreSQL + pgvector Extension
         ├── candidate_collaborations (worked_with relationships)
         └── candidate_reporting (reports_to relationships)
 ```
+
+#### Architecture Update (System-of-Record + Active Documents)
+
+The current production architecture uses a trust-first split between **canonical candidate fields** and **versioned document snapshots**:
+
+- **System-of-record**: `candidates` (stable UI contract)
+  - Stable `candidates.id` is a UUID used everywhere in the app (pipelines, agents, audit, deep links).
+  - `candidates.skills` is a denormalized `text[]` cache for instant filtering.
+  - `candidates.active_document_id` points to the current/active CV snapshot.
+- **Versioned snapshots + vector index**: `candidate_documents`
+  - Multiple documents per candidate (each CV upload is a new row).
+  - Exactly one active document per candidate (`is_active=true`), used for default ranking/search.
+- **Canonical read model**: `candidate_documents_view`
+  - The frontend should read candidates via this view (candidates → active document) to avoid schema assumptions.
+- **Semantic search**: `match_candidates(query_embedding, match_threshold, match_count, include_historical default false)`
+  - Searches active documents by default; pass `include_historical=true` only for forensic/debug flows.
 
 ### Knowledge Graph Schema
 
@@ -317,6 +334,10 @@ Step 2: For each candidate:
   └── Insert into Supabase candidate_documents table
 Step 3: Track progress and report results
 ```
+
+**Note (System-of-Record update):**
+- Migration now writes a canonical record into `candidates` and an **active** versioned snapshot into `candidate_documents`.
+- The stable identifier used across the app is `candidates.id` (UUID), not `candidate_documents.id` (bigserial).
 
 **Usage:**
 
@@ -1957,34 +1978,20 @@ All agent actions appear in the Pulse Feed (bell icon in header):
    CREATE EXTENSION IF NOT EXISTS vector;
    ```
 
-3. **Create Vector Table**
+3. **Create Candidates System-of-Record + Active Documents (Recommended)**
+   In Supabase SQL Editor, run the repo script:
    ```sql
-   CREATE TABLE candidate_documents (
-     id bigserial PRIMARY KEY,
-     content text,
-     metadata jsonb,
-     embedding vector(768)
-   );
+   -- paste the contents of:
+   -- sql/CANDIDATES_SYSTEM_OF_RECORD_SETUP.sql
    ```
 
-4. **Create Search Function**
-   ```sql
-   -- See SUPABASE_VECTOR_GUIDE.md for full SQL
-   CREATE OR REPLACE FUNCTION match_candidates (
-     query_embedding vector(768),
-     match_threshold float,
-     match_count int
-   )
-   RETURNS TABLE (
-     id bigint,
-     content text,
-     metadata jsonb,
-     similarity float
-   )
-   ...
-   ```
+   This creates/updates:
+   - `candidates` (system-of-record)
+   - `candidate_documents` (versioned snapshots + embeddings; multiple CVs per candidate)
+   - `candidate_documents_view` (canonical read model: candidates → active document)
+   - `match_candidates()` (active docs by default; optional include_historical)
 
-5. **Setup Knowledge Graph (NEW)**
+4. **Setup Knowledge Graph (NEW)**
    ```sql
    -- In Supabase SQL Editor, run sql/KNOWLEDGE_GRAPH_SETUP.sql
    -- This creates:
@@ -1997,7 +2004,7 @@ All agent actions appear in the Pulse Feed (bell icon in header):
    -- File location: /sql/KNOWLEDGE_GRAPH_SETUP.sql
    ```
 
-6. **Setup Bulk Ingestion Progress Tracking**
+5. **Setup Bulk Ingestion Progress Tracking**
    ```sql
    -- In Supabase SQL Editor, run sql/BULK_INGESTION_SETUP.sql
    -- This creates the bulk_ingestion_progress table for tracking
@@ -2006,7 +2013,7 @@ All agent actions appear in the Pulse Feed (bell icon in header):
    -- File location: /sql/BULK_INGESTION_SETUP.sql
    ```
 
-7. **Setup Knowledge Graph Migration Tracking (IMPORTANT for Existing Data)**
+6. **Setup Knowledge Graph Migration Tracking (IMPORTANT for Existing Data)**
    ```sql
    -- In Supabase SQL Editor, run sql/GRAPH_MIGRATION_SETUP.sql
    -- This creates the graph_migration_progress table for tracking
@@ -2020,7 +2027,7 @@ All agent actions appear in the Pulse Feed (bell icon in header):
    -- This migration adds those relationships by parsing existing metadata.
    ```
 
-8. **Configure Environment Variables**
+7. **Configure Environment Variables**
 
    Update `.env`:
    ```bash
@@ -2036,17 +2043,17 @@ All agent actions appear in the Pulse Feed (bell icon in header):
    VITE_GOOGLE_DRIVE_FOLDER_ID=your_folder_id_here
    ```
 
-9. **Install Dependencies**
+8. **Install Dependencies**
    ```bash
    npm install
    ```
 
-10. **Start Development Server**
+9. **Start Development Server**
     ```bash
     npm run dev
     ```
 
-11. **Migrate Existing Candidates (If you have existing data)**
+10. **Migrate Existing Candidates (If you have existing data)**
 
     If you already have candidates in your database:
 
@@ -2112,6 +2119,37 @@ All agent actions appear in the Pulse Feed (bell icon in header):
 
 ---
 
+### Fairness (Aggregate, Pipeline Cohorts)
+
+Talent Sonar’s fairness reporting is designed to be **trust-first and enterprise-safe**:
+- **No inference**: demographics must come from **HRIS/ATS/self-report** only (no guessing from names/photos/CVs).
+- **Aggregate-only**: recruiters do **not** see per-candidate demographics; reports are cohort-level only.
+- **Server-driven**: cohort is defined by **job + pipeline stage + time window**, based on server events (auditable).
+- **Privacy gates**: the report suppresses breakdowns unless:
+  - minimum sample size is met, and
+  - minimum “known demographics” coverage is met.
+
+**Database setup**
+1. Run `sql/PIPELINE_SYSTEM_OF_TRUTH_SETUP.sql` (creates `public.pipeline_events`).
+2. Run `sql/FAIRNESS_DEMOGRAPHICS_SETUP.sql` (creates `public.candidate_demographics` and RPC `get_fairness_report_by_stage`).
+
+**How it works**
+- The cohort is: “candidates whose **latest** stage for this job (within the time window) equals the requested stage”.
+- `public.candidate_demographics` is **RLS-protected** (no direct read policies by default).
+- The UI calls the aggregation RPC (SECURITY DEFINER) and shows:
+  - cohort size
+  - coverage %
+  - distributions + alerts **only when privacy gates pass**
+
+**UI access**
+- Pipeline view: click **Fairness** (top-right of the pipeline header).
+- Candidates view: open **Insights → Fairness (Pipeline Cohorts)**.
+
+**Expected behavior**
+- If no demographics are loaded yet, the report will show **INSUFFICIENT_COVERAGE**. This is expected and prevents misleading dashboards.
+
+---
+
 ## Architecture
 
 ### System Overview
@@ -2162,6 +2200,11 @@ User Query
       → Return top matches
   → Display ranked results
 ```
+
+**Important (active vs historical documents):**
+- `match_candidates(query_embedding, match_threshold, match_count)` searches **active** documents only.
+- Pass `include_historical=true` as the 4th parameter only for forensic/debug flows (older CV versions).
+- Frontend reads candidate profiles from `candidate_documents_view` (candidates → active document) to avoid schema assumptions.
 
 **Autonomous Agent:**
 ```

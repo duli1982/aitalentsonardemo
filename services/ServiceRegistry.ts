@@ -8,7 +8,6 @@ import { agentGateway, AgentGateway } from './AgentGateway';
 import { auditService, AuditService } from './AuditService';
 import { careerPathService, CareerPathService } from './CareerPathService';
 import { demandForecastingService, DemandForecastingService } from './DemandForecastingService';
-import { fairnessEngine, FairnessEngine } from './FairnessEngine';
 import { ingestionService, IngestionService } from './IngestionService';
 import { orgTwinService, OrgTwinService } from './OrgTwinService';
 
@@ -21,7 +20,6 @@ export interface ServiceRegistry {
     audit: typeof auditService;
     career: CareerPathService;
     forecast: DemandForecastingService;
-    fairness: FairnessEngine;
     ingestion: IngestionService;
     orgTwin: OrgTwinService;
 }
@@ -35,7 +33,6 @@ export const createMockRegistry = (): ServiceRegistry => ({
     audit: auditService,
     career: careerPathService,
     forecast: demandForecastingService,
-    fairness: fairnessEngine,
     ingestion: ingestionService,
     orgTwin: orgTwinService,
 });

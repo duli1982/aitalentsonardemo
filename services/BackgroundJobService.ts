@@ -4,6 +4,8 @@
  * These agents work proactively without user interaction
  */
 
+import { eventBus, EVENTS } from '../utils/EventBus';
+
 export type JobStatus = 'idle' | 'running' | 'completed' | 'failed';
 
 export interface BackgroundJob {
@@ -53,6 +55,7 @@ class BackgroundJobService {
         }
 
         console.log(`[BackgroundJobService] Registered job: ${job.name} (${id})`);
+        eventBus.emit(EVENTS.BACKGROUND_JOBS_CHANGED, { type: 'registered', job: fullJob });
         return id;
     }
 
@@ -112,6 +115,7 @@ class BackgroundJobService {
         job.lastRun = new Date();
         job.nextRun = new Date(Date.now() + job.interval);
         this.jobs.set(jobId, job);
+        eventBus.emit(EVENTS.BACKGROUND_JOBS_CHANGED, { type: 'started', job });
 
         console.log(`[BackgroundJobService] Running job: ${job.name}`);
 
@@ -120,6 +124,7 @@ class BackgroundJobService {
 
             job.status = 'completed';
             this.jobs.set(jobId, job);
+            eventBus.emit(EVENTS.BACKGROUND_JOBS_CHANGED, { type: 'completed', job });
 
             const result: JobResult = {
                 jobId,
@@ -129,11 +134,13 @@ class BackgroundJobService {
             };
 
             this.addResult(result);
+            eventBus.emit(EVENTS.BACKGROUND_JOB_RESULT, result);
             return result;
 
         } catch (error) {
             job.status = 'failed';
             this.jobs.set(jobId, job);
+            eventBus.emit(EVENTS.BACKGROUND_JOBS_CHANGED, { type: 'failed', job });
 
             const result: JobResult = {
                 jobId,
@@ -143,6 +150,7 @@ class BackgroundJobService {
             };
 
             this.addResult(result);
+            eventBus.emit(EVENTS.BACKGROUND_JOB_RESULT, result);
             console.error(`[BackgroundJobService] Job failed:`, error);
             return result;
         }
@@ -171,6 +179,7 @@ class BackgroundJobService {
         }
 
         console.log(`[BackgroundJobService] Job ${job.name} ${enabled ? 'enabled' : 'disabled'}`);
+        eventBus.emit(EVENTS.BACKGROUND_JOBS_CHANGED, { type: enabled ? 'enabled' : 'disabled', job });
     }
 
     /**
@@ -225,6 +234,7 @@ class BackgroundJobService {
         });
 
         this.timers.clear();
+        eventBus.emit(EVENTS.BACKGROUND_JOBS_CHANGED, { type: 'shutdown' });
     }
 }
 

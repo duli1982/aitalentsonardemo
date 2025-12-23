@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate, createSearchParams } from 'react-router-dom';
 import { OrgUnit, CapabilityMetric, ScenarioResult } from '../types/org';
 import { orgTwinService } from '../services/OrgTwinService';
 import type { OrgTwinTemplateId } from '../data/orgTwinTemplates';
 import { useData } from '../contexts/DataContext';
-import { Building2, ChevronRight, ChevronDown, Activity, AlertOctagon, TrendingUp, Users, MapPin, Zap, ArrowRight, Globe, Layers } from 'lucide-react';
+import { useOrgTwinSupabaseCandidates } from '../hooks/useOrgTwinSupabaseCandidates';
+import { Building2, ChevronRight, ChevronDown, Activity, AlertOctagon, TrendingUp, Users, MapPin, Zap, ArrowRight, Globe, Layers, Database, RefreshCw } from 'lucide-react';
 
 // --- Components ---
 
@@ -155,7 +157,9 @@ const ScenarioSimulator: React.FC<{ scenarios: { id: string; label: string; colo
 // --- Page ---
 
 const OrgTwinPage: React.FC = () => {
+    const navigate = useNavigate();
     const { jobs, internalCandidates, pastCandidates, uploadedCandidates } = useData();
+    const { candidates: supabaseCandidates, isLoading: isLoadingSupabase, refresh: refreshSupabase } = useOrgTwinSupabaseCandidates({ enabled: true, limit: 7000 });
 
     const templates = useMemo(() => orgTwinService.listTemplates(), []);
     const [templateId, setTemplateId] = useState<OrgTwinTemplateId>(() => {
@@ -183,8 +187,10 @@ const OrgTwinPage: React.FC = () => {
     const orgTree = template.orgTree;
 
     const allCandidates = useMemo(() => {
+        // Prefer Supabase system-of-record when available (trust + utility).
+        if (supabaseCandidates.length > 0) return supabaseCandidates;
         return [...internalCandidates, ...pastCandidates, ...uploadedCandidates];
-    }, [internalCandidates, pastCandidates, uploadedCandidates]);
+    }, [internalCandidates, pastCandidates, uploadedCandidates, supabaseCandidates]);
 
     const metrics = useMemo(() => {
         return orgTwinService.analyzeCapabilities(templateId, selectedUnitId, { candidates: allCandidates, jobs });
@@ -219,6 +225,13 @@ const OrgTwinPage: React.FC = () => {
             return locationHints.some((hint) => hint.length > 2 && loc.includes(hint));
         });
     }, [allCandidates, selectedUnit]);
+
+    const verifiedCoverage = useMemo(() => {
+        const total = candidatesForSelectedUnit.length;
+        if (!total) return { pct: 0, verified: 0, total: 0 };
+        const verified = candidatesForSelectedUnit.filter((c: any) => (c.passport?.verifiedSkills?.length ?? 0) > 0).length;
+        return { pct: Math.round((verified / total) * 100), verified, total };
+    }, [candidatesForSelectedUnit]);
 
     const openJobsForSelectedUnit = useMemo(() => {
         if (!selectedUnit) return [];
@@ -286,7 +299,23 @@ const OrgTwinPage: React.FC = () => {
                         <p className="text-slate-400 text-sm">{template.description}</p>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                        <span className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-semibold ${supabaseCandidates.length > 0 ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-200' : 'bg-slate-900/30 border-slate-700 text-slate-300'}`}>
+                            <Database className="h-4 w-4" />
+                            {supabaseCandidates.length > 0 ? `DB-backed (${supabaseCandidates.length.toLocaleString()})` : 'Demo-backed'}
+                        </span>
+                        {supabaseCandidates.length > 0 && (
+                            <button
+                                type="button"
+                                onClick={refreshSupabase}
+                                disabled={isLoadingSupabase}
+                                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700 bg-slate-900/30 text-slate-200 hover:bg-slate-900/60 text-xs font-semibold disabled:opacity-60"
+                                title="Refresh candidates from Supabase"
+                            >
+                                <RefreshCw className={`h-4 w-4 ${isLoadingSupabase ? 'animate-spin' : ''}`} />
+                                Refresh
+                            </button>
+                        )}
                         <span className="text-xs text-slate-400 uppercase font-semibold">Template</span>
                         <select
                             value={templateId}
@@ -360,6 +389,31 @@ const OrgTwinPage: React.FC = () => {
                                 </div>
                             </div>
 
+                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const loc = selectedUnit?.location ?? '';
+                                        navigate({
+                                            pathname: '/candidates',
+                                            search: `?${createSearchParams({ location: loc })}`
+                                        });
+                                    }}
+                                    className="px-3 py-2 rounded-lg bg-slate-900/40 border border-slate-700 text-slate-200 hover:bg-slate-900/60 text-xs font-semibold"
+                                    disabled={!selectedUnit?.location}
+                                    title={!selectedUnit?.location ? 'Add a location to this org unit to enable filtering' : 'Open candidates filtered by this location'}
+                                >
+                                    Open Candidates
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => navigate('/')}
+                                    className="px-3 py-2 rounded-lg bg-slate-900/40 border border-slate-700 text-slate-200 hover:bg-slate-900/60 text-xs font-semibold"
+                                >
+                                    Open Jobs
+                                </button>
+                            </div>
+
                             <div className="grid grid-cols-3 gap-3">
                                 <div className="bg-slate-900/40 border border-slate-700 rounded-lg px-3 py-2">
                                     <div className="text-[11px] text-slate-500 uppercase font-semibold">Headcount</div>
@@ -373,6 +427,21 @@ const OrgTwinPage: React.FC = () => {
                                     <div className="text-[11px] text-slate-500 uppercase font-semibold">Open Jobs</div>
                                     <div className="text-white font-bold">{openJobsForSelectedUnit.length}</div>
                                 </div>
+                            </div>
+                        </div>
+
+                        <div className="mt-4 bg-slate-900/40 border border-slate-700 rounded-lg p-3">
+                            <div className="flex items-center justify-between gap-3">
+                                <div className="text-xs text-slate-300">
+                                    Verified skills coverage: <span className="text-white font-semibold">{verifiedCoverage.pct}%</span>
+                                    <span className="text-slate-500"> ({verifiedCoverage.verified}/{verifiedCoverage.total})</span>
+                                </div>
+                                <div className="text-[11px] text-slate-500">
+                                    Assessment-backed skills increase trust.
+                                </div>
+                            </div>
+                            <div className="mt-2 h-2 rounded bg-slate-800 overflow-hidden border border-slate-700">
+                                <div className="h-full bg-emerald-500/70" style={{ width: `${Math.max(0, Math.min(100, verifiedCoverage.pct))}%` }} />
                             </div>
                         </div>
 

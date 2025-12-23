@@ -58,6 +58,7 @@ export class PulseService {
                 message: 'Michael Chen (Senior Data Scientist) has shown a 22% drop in internal graph connectivity this week.',
                 timestamp: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
                 entityId: 'c1',
+                entityRef: { candidateId: 'c1' },
                 isRead: false
             },
             {
@@ -75,24 +76,35 @@ export class PulseService {
     // Dynamic event listeners - alerts derived from real system events
     private setupEventListeners(): void {
         // Listen for candidate stage changes
-        eventBus.on(EVENTS.CANDIDATE_STAGED, (data: { candidateName: string; stage: string }) => {
-            if (data.stage === 'Offer') {
+        eventBus.on(EVENTS.CANDIDATE_STAGED, (data: any) => {
+            const candidateName = String(data?.candidateName || '');
+            const stage = String(data?.stage || '');
+            const candidateId = data?.candidateId ? String(data.candidateId) : undefined;
+            const jobId = data?.jobId ? String(data.jobId) : undefined;
+
+            if (stage === 'Offer') {
                 this.createAlert({
                     type: 'INTERNAL_MOBILITY',
                     severity: 'INFO',
                     title: 'Offer Extended',
-                    message: `${data.candidateName} has moved to Offer stage. Prepare compensation package.`
+                    message: `${candidateName} has moved to Offer stage. Prepare compensation package.`,
+                    entityRef: { candidateId, jobId, stage }
                 });
             }
         });
 
         // Listen for hiring events
-        eventBus.on(EVENTS.CANDIDATE_HIRED, (data: { candidateName: string; role: string }) => {
+        eventBus.on(EVENTS.CANDIDATE_HIRED, (data: any) => {
+            const candidateName = String(data?.candidateName || '');
+            const role = String(data?.role || '');
+            const candidateId = data?.candidateId ? String(data.candidateId) : undefined;
+            const jobId = data?.jobId ? String(data.jobId) : undefined;
             this.createAlert({
                 type: 'INTERNAL_MOBILITY',
                 severity: 'OPPORTUNITY',
                 title: 'New Hire!',
-                message: `${data.candidateName} has been hired as ${data.role}. Onboarding starts soon.`
+                message: `${candidateName} has been hired as ${role}. Onboarding starts soon.`,
+                entityRef: { candidateId, jobId, stage: 'hired' }
             });
         });
 
@@ -128,6 +140,11 @@ export class PulseService {
             ...partial
         };
 
+        // Back-compat: keep `entityId` populated if we have a more specific ref.
+        if (!alert.entityId && alert.entityRef) {
+            alert.entityId = alert.entityRef.candidateId || alert.entityRef.jobId;
+        }
+
         this.alerts.unshift(alert);
         this.notifySubscribers();
 
@@ -150,14 +167,20 @@ export class PulseService {
 
         const agentType = payload.metadata?.agentType;
         const title = payload.title || (agentType ? `${agentType} Agent` : 'Agent Update');
-        const entityId = payload.metadata?.candidateId || payload.metadata?.jobId;
+        const candidateId = payload.metadata?.candidateId ? String(payload.metadata.candidateId) : undefined;
+        const jobId = payload.metadata?.jobId ? String(payload.metadata.jobId) : undefined;
+        const stage = payload.metadata?.stage ? String(payload.metadata.stage) : undefined;
+        const entityId = candidateId || jobId;
+        const actionLink = payload.metadata?.actionLink ? String(payload.metadata.actionLink) : undefined;
 
         this.createAlert({
             type: 'INTERNAL_MOBILITY',
             severity: mappedSeverity,
             title,
             message: payload.message,
-            entityId
+            entityId,
+            entityRef: { candidateId, jobId, stage },
+            actionLink
         });
     }
 

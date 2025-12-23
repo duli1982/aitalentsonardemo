@@ -4,6 +4,7 @@ import Header from '../components/Header';
 import { useToast } from '../contexts/ToastContext';
 import { AlertTriangle, X } from 'lucide-react';
 import { AppView } from '../types';
+import DegradedModeBanner from '../components/DegradedModeBanner';
 
 interface MainLayoutProps {
     error: string | null;
@@ -23,12 +24,13 @@ const MainLayout: React.FC<MainLayoutProps> = ({ error, setError, onOpenSmartSea
                 location.pathname === '/insights' ? 'insights' :
                     location.pathname === '/org-twin' ? 'org-twin' :
                         location.pathname === '/forecast' ? 'forecast' :
-                            location.pathname === '/agents' ? 'agents' :
-                                location.pathname === '/autonomous-agents' ? 'autonomous-agents' :
-                                    location.pathname === '/mobility' ? 'mobility' :
-                                        location.pathname === '/governance' ? 'governance' :
-                                            location.pathname === '/health' ? 'health' :
-                                                'jobs';
+                                location.pathname === '/agents' ? 'agents' :
+                                    location.pathname === '/autonomous-agents' ? 'autonomous-agents' :
+                                        location.pathname === '/agent-inbox' ? 'agent-inbox' :
+                                            location.pathname === '/mobility' ? 'mobility' :
+                                                location.pathname === '/governance' ? 'governance' :
+                                                    location.pathname === '/health' ? 'health' :
+                                                        'jobs';
 
     const handleViewChange = (view: AppView) => {
         navigate(view === 'jobs' ? '/' : `/${view}`);
@@ -42,6 +44,10 @@ const MainLayout: React.FC<MainLayoutProps> = ({ error, setError, onOpenSmartSea
                 onOpenSmartSearch={onOpenSmartSearch}
                 onOpenRAG={onOpenRAG}
             />
+
+            <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-4">
+                <DegradedModeBanner />
+            </div>
 
             {error && (
                 <div className="fixed top-20 left-1/2 transform -translate-x-1/2 bg-red-600/90 text-white p-3 rounded-md shadow-lg z-[150] flex items-center max-w-md">

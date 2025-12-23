@@ -2,9 +2,13 @@
 // Provides resume parsing, candidate Q&A, and text analysis
 
 import { GoogleGenAI } from '@google/genai';
+import type { AppError } from '../types/errors';
+import { err, ok, type Result } from '../types/result';
+import { notConfigured, rateLimited, unknown } from './errorHandling';
 
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
 const DISABLE_AI = String(import.meta.env.VITE_DISABLE_AI || '').toLowerCase() === 'true';
+const TEXT_MODELS_ENV = String(import.meta.env.VITE_GEMINI_TEXT_MODELS || '').trim();
 
 interface ParsedResume {
     name: string;
@@ -25,12 +29,7 @@ interface ParsedResume {
     summary: string;
 }
 
-interface AIResponse<T> {
-    success: boolean;
-    data?: T;
-    error?: string;
-    retryAfterMs?: number;
-}
+type AIResponse<T> = Result<T>;
 
 const RATE_LIMIT_TOKENS = 20;
 const TOKEN_REFRESH_MS = 60 * 1000;
@@ -39,6 +38,7 @@ class RequestGate {
     private tokens = RATE_LIMIT_TOKENS;
     private lastRefill = Date.now();
     private queue: Array<() => void> = [];
+    private scheduledRefill: ReturnType<typeof setTimeout> | null = null;
 
     acquire(): Promise<void> {
         this.refill();
@@ -46,6 +46,7 @@ class RequestGate {
             this.tokens -= 1;
             return Promise.resolve();
         }
+        this.scheduleRefill();
         return new Promise((resolve) => {
             this.queue.push(() => {
                 this.tokens -= 1;
@@ -59,11 +60,25 @@ class RequestGate {
         if (now - this.lastRefill >= TOKEN_REFRESH_MS) {
             this.tokens = RATE_LIMIT_TOKENS;
             this.lastRefill = now;
+            if (this.scheduledRefill !== null) {
+                clearTimeout(this.scheduledRefill);
+                this.scheduledRefill = null;
+            }
             while (this.tokens > 0 && this.queue.length > 0) {
                 const next = this.queue.shift();
                 if (next) next();
             }
         }
+    }
+
+    private scheduleRefill() {
+        if (this.scheduledRefill !== null) return;
+        const delay = Math.max(0, TOKEN_REFRESH_MS - (Date.now() - this.lastRefill));
+        this.scheduledRefill = setTimeout(() => {
+            this.scheduledRefill = null;
+            this.refill();
+            if (this.queue.length > 0) this.scheduleRefill();
+        }, delay + 10);
     }
 }
 
@@ -102,13 +117,86 @@ class Cache<T> {
     }
 }
 
+function parseCsvModels(input: string): string[] {
+    return input
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+}
+
+function fnv1aHex(value: string): string {
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < value.length; i++) {
+        hash ^= value.charCodeAt(i);
+        hash = (hash * 0x01000193) >>> 0;
+    }
+    return hash.toString(16).padStart(8, '0');
+}
+
+type StoredCacheEntry<T> = { v: T; t: number };
+
+class LocalStorageCache<T> {
+    constructor(
+        private namespace: string,
+        private ttlMs: number,
+        private maxEntries: number
+    ) {}
+
+    get(key: string): T | undefined {
+        try {
+            const raw = localStorage.getItem(`${this.namespace}:${key}`);
+            if (!raw) return undefined;
+            const parsed = JSON.parse(raw) as StoredCacheEntry<T>;
+            if (!parsed || typeof parsed.t !== 'number') return undefined;
+            if (Date.now() - parsed.t > this.ttlMs) {
+                localStorage.removeItem(`${this.namespace}:${key}`);
+                return undefined;
+            }
+            return parsed.v;
+        } catch {
+            return undefined;
+        }
+    }
+
+    set(key: string, value: T) {
+        try {
+            const storageKey = `${this.namespace}:${key}`;
+            const entry: StoredCacheEntry<T> = { v: value, t: Date.now() };
+            localStorage.setItem(storageKey, JSON.stringify(entry));
+
+            const indexKey = `${this.namespace}:__index__`;
+            const indexRaw = localStorage.getItem(indexKey);
+            const parsed = indexRaw ? JSON.parse(indexRaw) : null;
+            const index = Array.isArray(parsed) ? (parsed as Array<{ k: string; t: number }>) : [];
+
+            const filtered = index.filter((i) => i.k !== key);
+            filtered.unshift({ k: key, t: entry.t });
+            const trimmed = filtered.slice(0, this.maxEntries);
+            localStorage.setItem(indexKey, JSON.stringify(trimmed));
+
+            // Evict anything beyond trimmed list
+            for (const item of filtered.slice(this.maxEntries)) {
+                localStorage.removeItem(`${this.namespace}:${item.k}`);
+            }
+        } catch {
+            // Ignore quota / JSON errors
+        }
+    }
+}
+
 class AIService {
     private client: GoogleGenAI | null = null;
-    private model = 'gemini-2.0-flash';
-    private gate = new RequestGate();
+    private textModels = TEXT_MODELS_ENV
+        ? parseCsvModels(TEXT_MODELS_ENV)
+        : ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3-flash', 'gemini-2.0-flash'];
+    private textGate = new RequestGate();
+    private embedGate = new RequestGate();
     private backoff = new BackoffTracker();
     private textCache = new Cache<string>(1000 * 60 * 5);
     private embedCache = new Cache<number[]>(1000 * 60 * 20);
+    private embedLocalCache = new LocalStorageCache<number[]>('ts_embed_v1', 1000 * 60 * 60 * 24, 25);
+    private inflightText = new Map<string, Promise<AIResponse<string>>>();
+    private inflightEmbed = new Map<string, Promise<AIResponse<number[]>>>();
 
     constructor() {
         if (DISABLE_AI) {
@@ -123,6 +211,18 @@ class AIService {
 
     isAvailable(): boolean {
         return this.client !== null;
+    }
+
+    private unknownError(message: string, cause?: unknown): AppError {
+        return unknown('AIService', message, cause);
+    }
+
+    private notConfiguredError(message: string): AppError {
+        return notConfigured('AIService', message);
+    }
+
+    private rateLimitError(message: string, retryAfterMs: number, cause?: unknown): AppError {
+        return rateLimited('AIService', message, retryAfterMs, cause);
     }
 
     private parseRetryAfterMs(error: unknown): number | null {
@@ -198,7 +298,7 @@ Return ONLY valid JSON, no markdown or explanation.`;
             return await this.generateJson<ParsedResume>(prompt);
         } catch (error) {
             console.error('[AIService] Resume parsing failed:', error);
-            return { success: false, error: String(error) };
+            return err(this.unknownError('Signal extraction failed.', error));
         }
     }
 
@@ -227,7 +327,7 @@ Return a JSON array of strings, no explanation.`;
             return await this.generateJson<string[]>(prompt);
         } catch (error) {
             console.error('[AIService] Question generation failed:', error);
-            return { success: false, error: String(error) };
+            return err(this.unknownError('AI request failed.', error));
         }
     }
 
@@ -237,39 +337,68 @@ Return a JSON array of strings, no explanation.`;
      */
     async generateText(prompt: string): Promise<AIResponse<string>> {
         if (!this.client) {
-            return { success: true, data: '(Mock) AI text generation is disabled. Set VITE_GEMINI_API_KEY for real output.' };
+            return ok('(Mock) AI text generation is disabled. Set VITE_GEMINI_API_KEY for real output.');
         }
 
-        const cached = this.textCache.get(`${this.model}:${prompt}`);
-        if (cached) return { success: true, data: cached };
+        const inflightKey = fnv1aHex(prompt);
+        const cachedAny = this.textCache.get(inflightKey);
+        if (cachedAny) return ok(cachedAny);
 
-        await this.gate.acquire();
+        const inflight = this.inflightText.get(inflightKey);
+        if (inflight) return await inflight;
 
-        if (!this.backoff.canProceed()) {
-            return {
-                success: false,
-                error: `AI temporarily rate-limited; retry in ${Math.round(this.backoff.delayRemaining / 1000)}s`,
-                retryAfterMs: this.backoff.delayRemaining
-            };
-        }
-
-        try {
-            const response = await this.client.models.generateContent({
-                model: this.model,
-                contents: prompt
-            });
-
-            const text = (response.text || '').trim();
-            this.textCache.set(`${this.model}:${prompt}`, text);
-            return { success: true, data: text };
-        } catch (error) {
-            const rate = this.handleRateLimit(error);
-            if (rate) {
-                if (import.meta.env.DEV) console.warn('[AIService] Text generation rate-limited:', rate.message);
-                return { success: false, error: rate.message, retryAfterMs: rate.retryAfterMs };
+        const run = (async (): Promise<AIResponse<string>> => {
+            if (!this.backoff.canProceed()) {
+                const retryAfterMs = this.backoff.delayRemaining;
+                return err(
+                    this.rateLimitError(`AI temporarily rate-limited; retry in ${Math.round(retryAfterMs / 1000)}s`, retryAfterMs),
+                    { retryAfterMs }
+                );
             }
-            console.error('[AIService] Text generation failed:', error);
-            return { success: false, error: String(error) };
+
+            for (const model of this.textModels) {
+                const cacheKey = `${model}:${prompt}`;
+                const cached = this.textCache.get(cacheKey);
+                if (cached) return ok(cached);
+
+                await this.textGate.acquire();
+
+                try {
+                    const response = await this.client.models.generateContent({
+                        model,
+                        contents: prompt
+                    });
+
+                    const text = (response.text || '').trim();
+                    this.textCache.set(cacheKey, text);
+                    this.textCache.set(inflightKey, text);
+                    return ok(text);
+                } catch (error) {
+                    const rate = this.handleRateLimit(error);
+                    if (rate) {
+                        if (import.meta.env.DEV) console.warn('[AIService] Text generation rate-limited:', rate.message);
+                        // Try the next model in the list before giving up.
+                        continue;
+                    }
+                    console.error('[AIService] Text generation failed:', error);
+                    return err(this.unknownError('Text generation failed.', error));
+                }
+            }
+
+            const retryAfterMs = Math.max(1000, this.backoff.delayRemaining || 10_000);
+            return err(
+                this.rateLimitError(`AI temporarily rate-limited; retry in ${Math.round(retryAfterMs / 1000)}s`, retryAfterMs, {
+                    modelsTried: this.textModels
+                }),
+                { retryAfterMs }
+            );
+        })();
+
+        this.inflightText.set(inflightKey, run);
+        try {
+            return await run;
+        } finally {
+            this.inflightText.delete(inflightKey);
         }
     }
 
@@ -280,16 +409,16 @@ Return a JSON array of strings, no explanation.`;
     async generateJson<T>(prompt: string): Promise<AIResponse<T>> {
         const textResponse = await this.generateText(prompt);
         if (!textResponse.success || !textResponse.data) {
-            return { success: false, error: textResponse.error || 'No response', retryAfterMs: textResponse.retryAfterMs };
+            return err(textResponse.error, { retryAfterMs: textResponse.retryAfterMs });
         }
 
         try {
             const jsonStr = textResponse.data.replace(/```json\n?|\n?```/g, '').trim();
             const parsed = JSON.parse(jsonStr) as T;
-            return { success: true, data: parsed };
+            return ok(parsed);
         } catch (error) {
             console.error('[AIService] JSON parse failed:', error);
-            return { success: false, error: String(error) };
+            return err(this.unknownError('Failed to parse AI JSON response.', error));
         }
     }
 
@@ -307,7 +436,7 @@ Analyze this text and extract any knowledge signals.
             return await this.generateJson<{ skill: string; confidence: number; evidence: string }[]>(prompt);
         } catch (error) {
             console.error('[AIService] Signal extraction failed:', error);
-            return { success: false, error: String(error) };
+            return err(this.unknownError('Signal extraction failed.', error));
         }
     }
 
@@ -316,55 +445,73 @@ Analyze this text and extract any knowledge signals.
         if (!this.client) {
             // Mock 768-dim vector
             const mockVector = Array(768).fill(0).map(() => Math.random() * 0.1);
-            return { success: true, data: mockVector };
+            return ok(mockVector);
         }
 
         const cached = this.embedCache.get(text);
-        if (cached) return { success: true, data: cached };
+        if (cached) return ok(cached);
 
-        await this.gate.acquire();
-
-        if (!this.backoff.canProceed()) {
-            return {
-                success: false,
-                error: `AI temporarily rate-limited; retry in ${Math.round(this.backoff.delayRemaining / 1000)}s`,
-                retryAfterMs: this.backoff.delayRemaining
-            };
+        const key = fnv1aHex(text);
+        const cachedLocal = this.embedLocalCache.get(key);
+        if (cachedLocal) {
+            this.embedCache.set(text, cachedLocal);
+            return ok(cachedLocal);
         }
 
+        const inflight = this.inflightEmbed.get(key);
+        if (inflight) return await inflight;
+
+        const run = (async (): Promise<AIResponse<number[]>> => {
+            await this.embedGate.acquire();
+
+            if (!this.backoff.canProceed()) {
+                const retryAfterMs = this.backoff.delayRemaining;
+                return err(
+                    this.rateLimitError(`AI temporarily rate-limited; retry in ${Math.round(retryAfterMs / 1000)}s`, retryAfterMs),
+                    { retryAfterMs }
+                );
+            }
+
+            try {
+                const result = await this.client.models.embedContent({
+                    model: 'text-embedding-004',
+                    contents: text,
+                });
+
+                // Handle both potential response formats
+                const response = result as any;
+                const values = response.embeddings?.[0]?.values || response.embedding?.values;
+
+                if (!values) {
+                    throw new Error('No embedding returned from API');
+                }
+
+                this.embedCache.set(text, values);
+                this.embedLocalCache.set(key, values);
+                return ok(values);
+            } catch (error) {
+                const rate = this.handleRateLimit(error);
+                if (rate) {
+                    if (import.meta.env.DEV) console.warn('[AIService] Embedding rate-limited:', rate.message);
+                    return err(this.rateLimitError(rate.message, rate.retryAfterMs, error), { retryAfterMs: rate.retryAfterMs });
+                }
+                console.error('[AIService] Embedding failed:', error);
+                return err(this.unknownError('Embedding request failed.', error));
+            }
+        })();
+
+        this.inflightEmbed.set(key, run);
         try {
-            const result = await this.client.models.embedContent({
-                model: 'text-embedding-004',
-                contents: text,
-            });
-
-            // Handle both potential response formats
-            const response = result as any;
-            const values = response.embeddings?.[0]?.values || response.embedding?.values;
-
-            if (!values) {
-                throw new Error('No embedding returned from API');
-            }
-
-            this.embedCache.set(text, values);
-            return { success: true, data: values };
-        } catch (error) {
-            const rate = this.handleRateLimit(error);
-            if (rate) {
-                if (import.meta.env.DEV) console.warn('[AIService] Embedding rate-limited:', rate.message);
-                return { success: false, error: rate.message, retryAfterMs: rate.retryAfterMs };
-            }
-            console.error('[AIService] Embedding failed:', error);
-            return { success: false, error: String(error) };
+            return await run;
+        } finally {
+            this.inflightEmbed.delete(key);
         }
     }
 
     // Mock implementations for when API is not available
     private mockParseResume(text: string): AIResponse<ParsedResume> {
         const words = text.split(/\s+/);
-        return {
-            success: true,
-            data: {
+        return ok({
                 name: words.slice(0, 2).join(' ') || 'Unknown Candidate',
                 email: 'candidate@example.com',
                 skills: ['JavaScript', 'React', 'TypeScript', 'Node.js'],
@@ -381,8 +528,7 @@ Analyze this text and extract any knowledge signals.
                 }],
                 summary: 'Experienced software engineer with strong technical skills. ' +
                     '(Mock data - set VITE_GEMINI_API_KEY for real parsing)'
-            }
-        };
+            });
     }
 
     private mockGenerateQuestions(skills: string[], role: string, count: number): AIResponse<string[]> {
@@ -393,16 +539,13 @@ Analyze this text and extract any knowledge signals.
             `How do you handle disagreements with team members?`,
             `What's your experience with ${skills[1] || 'modern development practices'}?`
         ];
-        return { success: true, data: questions.slice(0, count) };
+        return ok(questions.slice(0, count));
     }
 
     private mockExtractSignals(text: string): AIResponse<{ skill: string; confidence: number; evidence: string }[]> {
-        return {
-            success: true,
-            data: [
-                { skill: 'Communication', confidence: 75, evidence: 'Mock extraction - set API key for real analysis' }
-            ]
-        };
+        return ok([
+            { skill: 'Communication', confidence: 75, evidence: 'Mock extraction - set API key for real analysis' }
+        ]);
     }
 }
 

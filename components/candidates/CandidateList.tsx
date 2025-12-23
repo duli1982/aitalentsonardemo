@@ -101,7 +101,7 @@ const CandidateList: React.FC<CandidateListProps> = ({ candidates, selectedCandi
         <div
             ref={listRef}
             tabIndex={0}
-            className="flex flex-col h-full overflow-hidden focus:outline-none"
+            className="flex flex-col h-full overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 rounded-xl"
             role="listbox"
             aria-label="Candidate list"
         >
@@ -124,7 +124,7 @@ const CandidateList: React.FC<CandidateListProps> = ({ candidates, selectedCandi
                                         : selectedCandidateId === candidate.id
                                             ? 'bg-slate-800 shadow-lg shadow-sky-900/20 ring-1 ring-sky-500/50 border-transparent'
                                             : 'bg-slate-800/50 hover:bg-slate-800 hover:shadow-md hover:-translate-y-0.5 border-transparent hover:border-slate-700'
-                                        }`}
+                                        } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900`}
                                 >
                                     {selectedCandidateId === candidate.id && !comparisonMode && (
                                         <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-sky-400 to-blue-600 rounded-l-xl" />
