@@ -106,14 +106,15 @@ export default async function handler(req: any, res: any) {
     const gemini = new GeminiResumeService();
     const parsed = await gemini.parseResume(extracted.text);
 
-    if (!parsed.ok) {
+    if (parsed.ok === false) {
+      const retryAfterMs = parsed.retryAfterMs;
       return send(res, 200, {
         ok: true,
         candidateId,
         documentId: docRow.id,
         parsedResume: null,
         parseStatus: 'PENDING_PARSE',
-        retryAfterMs: parsed.retryAfterMs,
+        retryAfterMs,
         extracted: { bytes: extracted.bytes, sha256: extracted.sha256 },
       });
     }

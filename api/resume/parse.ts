@@ -48,8 +48,9 @@ export default async function handler(req: any, res: any) {
 
     const gemini = new GeminiResumeService();
     const parsed = await gemini.parseResume(content);
-    if (!parsed.ok) {
-      return send(res, 429, { ok: false, errorCode: parsed.errorCode, message: parsed.message, retryAfterMs: parsed.retryAfterMs });
+    if (parsed.ok === false) {
+      const { errorCode, message, retryAfterMs } = parsed;
+      return send(res, 429, { ok: false, errorCode, message, retryAfterMs });
     }
 
     const parsedResume = parsed.data;
@@ -81,4 +82,3 @@ export default async function handler(req: any, res: any) {
     return send(res, 500, { ok: false, errorCode: 'UPSTREAM', message: String(error?.message || error) });
   }
 }
-

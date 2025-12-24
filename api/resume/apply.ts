@@ -56,8 +56,9 @@ export default async function handler(req: any, res: any) {
 
     const gemini = new GeminiResumeService();
     const embedded = await gemini.embed(content);
-    if (!embedded.ok) {
-      return send(res, 429, { ok: false, errorCode: embedded.errorCode, message: embedded.message, retryAfterMs: embedded.retryAfterMs });
+    if (embedded.ok === false) {
+      const { errorCode, message, retryAfterMs } = embedded;
+      return send(res, 429, { ok: false, errorCode, message, retryAfterMs });
     }
 
     const parsedResume = (doc.metadata as any)?.parsed_resume;
