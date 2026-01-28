@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import type { Candidate, Job, FitAnalysis, InternalCandidate, ProfileEnrichmentAnalysis } from '../types';
 import { User, ClipboardList, Briefcase, Brain, Loader2, Target, BarChart, ChevronDown, Sparkles, AlertCircle, Info, GitBranch, Linkedin, BarChart2, Pencil } from 'lucide-react';
-import * as geminiService from '../services/geminiService';
+import { profileEnrichmentService } from '../services/ProfileEnrichmentService';
 import SkillGapChart from './SkillGapChart';
 import EditCandidateModal from './modals/EditCandidateModal';
 
@@ -82,10 +82,13 @@ const ProfileCompletionCard: React.FC<{ candidate: Candidate, onUpdateCandidate:
         setIsLoading(true);
         setError(null);
         try {
-            const result = await geminiService.enrichCandidateProfile(candidate);
+            const result = await profileEnrichmentService.enrich(candidate);
+            const { suggestedRoleTitle, experienceSummary, inferredSkills } = result;
             const enrichedData: Partial<Candidate> = {
-                ...result,
-                skills: [...new Set([...candidate.skills, ...result.inferredSkills])],
+                suggestedRoleTitle,
+                experienceSummary,
+                inferredSkills,
+                skills: [...new Set([...candidate.skills, ...inferredSkills])],
                 profileStatus: 'complete'
             };
             onUpdateCandidate(candidate.id, enrichedData);

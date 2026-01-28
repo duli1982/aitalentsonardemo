@@ -14,6 +14,10 @@ import { pipelineEventService } from './PipelineEventService';
 import { fitAnalysisService } from './FitAnalysisService';
 import type { AgentMode } from './AgentSettingsService';
 import { proposedActionService } from './ProposedActionService';
+import { jobContextPackService } from './JobContextPackService';
+import { evidencePackService } from './EvidencePackService';
+import type { Candidate } from '../types';
+import { toCandidateSnapshot, toJobSnapshot } from '../utils/snapshots';
 
 const AI_PROMOTE_TO_LONG_LIST_THRESHOLD = 75;
 const SOURCING_SEMANTIC_THRESHOLD = 0.65;
@@ -94,6 +98,7 @@ class AutonomousSourcingAgent {
 
         for (const job of openJobs) {
             try {
+                const contextPack = await jobContextPackService.get(String(job.id));
                 // Build search query from job requirements
                 const searchQuery = this.buildSearchQuery(job);
 
@@ -279,25 +284,31 @@ class AutonomousSourcingAgent {
                                 continue;
                             }
 
-                            const candidateForAi = {
-                                id: candidate.id,
+                            const candidateForAi: Candidate = {
+                                id: String(candidate.id),
                                 type: 'uploaded',
-                                name: candidate.name,
-                                role: candidate.metadata?.role || candidate.metadata?.title || 'Candidate',
-                                skills: candidate.skills || [],
-                                experienceYears: candidate.metadata?.experienceYears ?? candidate.metadata?.experience ?? 0,
-                                summary: candidate.metadata?.summary || candidate.metadata?.content || '',
-                                location: candidate.metadata?.location || candidate.metadata?.city || '',
-                                email: candidate.email
-                            } as any;
+                                name: candidate.name || 'Candidate',
+                                role: String(candidate.metadata?.role || candidate.metadata?.title || 'Candidate'),
+                                skills: Array.isArray(candidate.skills) ? candidate.skills : [],
+                                experienceYears: Number(candidate.metadata?.experienceYears ?? candidate.metadata?.experience ?? 0) || 0,
+                                summary: String(candidate.metadata?.summary || candidate.metadata?.content || ''),
+                                location: String(candidate.metadata?.location || candidate.metadata?.city || ''),
+                                email: candidate.email || ''
+                            };
 
-                            const fit = await fitAnalysisService.analyze(job as any, candidateForAi as any, semanticScore);
+                            const fit = await fitAnalysisService.analyze(job, candidateForAi, semanticScore);
                             const aiScore = Math.round(fit.score);
                             const aiRationale = String(fit.rationale ?? '').trim();
                             const shouldPromote = aiScore >= AI_PROMOTE_TO_LONG_LIST_THRESHOLD;
                             const targetStage = shouldPromote ? 'long_list' : 'new';
                             const decision =
                                 aiScore >= 85 ? 'STRONG_PASS' : aiScore >= 75 ? 'PASS' : aiScore >= 60 ? 'BORDERLINE' : 'FAIL';
+
+                            const evidencePack = await evidencePackService.build({
+                                job: toJobSnapshot(job),
+                                candidate: toCandidateSnapshot(candidateForAi),
+                                contextPack
+                            });
 
                             void decisionArtifactService.saveShortlistAnalysis({
                                 candidateId: candidate.id,
@@ -314,7 +325,8 @@ class AutonomousSourcingAgent {
                                     targetStage,
                                     method: fit.method,
                                     confidence: fit.confidence,
-                                    reasons: fit.reasons ?? []
+                                    reasons: fit.reasons ?? [],
+                                    evidencePack
                                 },
                                 externalId: fitAnalysisService.getExternalIdForJob(job, 'agent'),
                                 rubricName: 'Shortlist Rubric',

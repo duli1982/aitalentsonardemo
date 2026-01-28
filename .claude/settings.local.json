@@ -15,7 +15,12 @@
       "Bash(git push:*)",
       "Bash(git rm:*)",
       "Bash(git commit:*)",
-      "Bash(git rev-parse:*)"
+      "Bash(git rev-parse:*)",
+      "Bash(npm test:*)",
+      "Bash(node -e \"require\\(''./services/GraphEngine.ts''\\)\")",
+      "Bash(npx vitest:*)",
+      "Bash(ls:*)",
+      "Bash(node -p:*)"
     ],
     "deny": [],
     "ask": []

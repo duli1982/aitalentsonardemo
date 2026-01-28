@@ -2,12 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { Activity, AlertTriangle, TrendingUp, Clock, Users, Target, Zap, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 import type { Candidate, Job } from '../types';
 import { useData } from '../contexts/DataContext';
-import * as geminiService from '../services/geminiService';
+import { pipelineHealthService, type PipelineHealthAnalysis } from '../services/PipelineHealthService';
 import Skeleton from './ui/Skeleton';
 
 const PipelineDashboard: React.FC = () => {
     const { internalCandidates, pastCandidates, uploadedCandidates, jobs } = useData();
-    const [analysis, setAnalysis] = useState<geminiService.PipelineHealthAnalysis | null>(null);
+    const [analysis, setAnalysis] = useState<PipelineHealthAnalysis | null>(null);
     const [isLoading, setIsLoading] = useState(true);
 
     const allCandidates = [...internalCandidates, ...pastCandidates, ...uploadedCandidates];
@@ -19,7 +19,7 @@ const PipelineDashboard: React.FC = () => {
     const analyzePipeline = async () => {
         setIsLoading(true);
         try {
-            const result = await geminiService.analyzePipelineHealth(allCandidates, jobs);
+            const result = await pipelineHealthService.analyze(allCandidates, jobs);
             setAnalysis(result);
         } catch (error) {
             console.error('Error analyzing pipeline:', error);
@@ -86,8 +86,8 @@ const PipelineDashboard: React.FC = () => {
                     </h1>
                     <p className="text-gray-400 mt-1">Real-time insights and early warning system</p>
                 </div>
-                <div className={`px-6 py-3 rounded-xl border font-bold uppercase text-sm ${getHealthColor(analysis.overallHealth)}`}>
-                    {analysis.overallHealth} • {analysis.healthScore}%
+                <div className={`px-6 py-3 rounded-xl border font-bold uppercase text-sm ${getHealthColor(analysis.healthRating)}`}>
+                    {analysis.healthRating} • {analysis.overallHealth}%
                 </div>
             </div>
 
@@ -99,7 +99,7 @@ const PipelineDashboard: React.FC = () => {
                         <span className="text-2xl font-bold text-white">{analysis.metrics.totalCandidates}</span>
                     </div>
                     <p className="text-sm text-gray-400">Total Candidates</p>
-                    <p className="text-xs text-gray-500 mt-1">{analysis.metrics.activeInPipeline} active</p>
+                    <p className="text-xs text-gray-500 mt-1">Tracking pipeline events + artifacts</p>
                 </div>
 
                 <div className="bg-slate-800/40 rounded-xl p-5 border border-slate-700/50">

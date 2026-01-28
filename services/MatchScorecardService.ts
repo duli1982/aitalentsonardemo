@@ -1,4 +1,4 @@
-import type { Candidate, Job } from '../types';
+import type { CandidateSnapshot, JobSnapshot } from '../types';
 
 export type EvidenceStrength = 'strong' | 'medium' | 'weak';
 export type EvidenceSource =
@@ -129,16 +129,13 @@ function inferSeniorityFromYears(years: number | undefined): SeniorityBand | nul
   return null;
 }
 
-function getCandidateYears(candidate: Candidate): number | undefined {
-  const asAny = candidate as any;
-  const years =
-    (typeof asAny.experienceYears === 'number' ? asAny.experienceYears : undefined) ??
-    (typeof asAny.experience === 'number' ? asAny.experience : undefined);
+function getCandidateYears(candidate: CandidateSnapshot): number | undefined {
+  const years = candidate.experienceYears;
   if (typeof years !== 'number' || !Number.isFinite(years)) return undefined;
   return Math.max(0, years);
 }
 
-function computeSkillFit(candidate: Candidate, job: Job) {
+function computeSkillFit(candidate: CandidateSnapshot, job: JobSnapshot) {
   const requiredSkills = (job.requiredSkills || []).filter(Boolean);
   const candidateSkills = (candidate.skills || []).filter(Boolean);
 
@@ -170,7 +167,7 @@ function computeSkillFit(candidate: Candidate, job: Job) {
   };
 }
 
-function computeSeniorityFit(candidate: Candidate, job: Job) {
+function computeSeniorityFit(candidate: CandidateSnapshot, job: JobSnapshot) {
   const expected = inferSeniorityFromTitle(job.title) ?? { label: 'unspecified', minYears: 0, maxYears: 30, keywords: [] };
   const years = getCandidateYears(candidate);
   const inferred = inferSeniorityFromYears(years ?? NaN) ?? { label: years == null ? 'unknown' : 'unspecified', minYears: 0, maxYears: 30, keywords: [] };
@@ -194,9 +191,8 @@ function computeSeniorityFit(candidate: Candidate, job: Job) {
   return { expectedSeniority: expected.label, inferredSeniority: inferred.label, seniorityFit: clamp(90 - penalty) };
 }
 
-function computeDomainFit(candidate: Candidate, job: Job) {
-  const role =
-    String((candidate as any).role || (candidate as any).currentRole || (candidate as any).previousRoleAppliedFor || '').trim();
+function computeDomainFit(candidate: CandidateSnapshot, job: JobSnapshot) {
+  const role = String(candidate.role || '').trim();
   const jobText = [job.title, job.department, ...(job.requiredSkills || [])].filter(Boolean).join(' ');
   const candText = [role, ...(candidate.skills || [])].filter(Boolean).join(' ');
 
@@ -208,11 +204,9 @@ function computeDomainFit(candidate: Candidate, job: Job) {
   return { domainFit: score, overlapKeywords: overlap };
 }
 
-function computeEvidenceQuality(candidate: Candidate, job: Job) {
-  const asAny = candidate as any;
-  const hasSummary = Boolean(asAny.summary || asAny.notes || asAny.careerAspirations);
+function computeEvidenceQuality(candidate: CandidateSnapshot, job: JobSnapshot) {
+  const hasSummary = Boolean(candidate.summary);
   const hasEmail = Boolean(candidate.email && String(candidate.email).includes('@'));
-  const hasFile = Boolean(asAny.fileName || asAny.resumeUrl);
   const skillsCount = Array.isArray(candidate.skills) ? candidate.skills.length : 0;
   const years = getCandidateYears(candidate);
   const hasYears = typeof years === 'number' && Number.isFinite(years);
@@ -225,15 +219,14 @@ function computeEvidenceQuality(candidate: Candidate, job: Job) {
   if (hasSummary) score += 12;
   if (hasYears) score += 12;
   if (hasEmail) score += 5;
-  if (hasFile) score += 8;
   if (hasRequirements) score += 4;
 
   return clamp(score);
 }
 
 function buildEvidence(params: {
-  candidate: Candidate;
-  job: Job;
+  candidate: CandidateSnapshot;
+  job: JobSnapshot;
   matchedSkills: string[];
   missingRequiredSkills: string[];
   expectedSeniority: string;
@@ -241,7 +234,6 @@ function buildEvidence(params: {
   overlapKeywords: string[];
 }): ScorecardEvidence[] {
   const { candidate, job, matchedSkills, missingRequiredSkills, expectedSeniority, inferredSeniority, overlapKeywords } = params;
-  const asAny = candidate as any;
 
   const evidence: ScorecardEvidence[] = [];
 
@@ -284,8 +276,7 @@ function buildEvidence(params: {
     });
   }
 
-  const role =
-    String(asAny.role || asAny.currentRole || asAny.previousRoleAppliedFor || '').trim();
+  const role = String(candidate.role || '').trim();
   if (role) {
     evidence.push({
       id: 'role:title',
@@ -306,7 +297,7 @@ function buildEvidence(params: {
     });
   }
 
-  const summary = String(asAny.summary || asAny.notes || asAny.careerAspirations || '').trim();
+  const summary = String(candidate.summary || '').trim();
   if (summary) {
     evidence.push({
       id: 'summary:present',
@@ -350,7 +341,7 @@ function buildRisks(params: {
   return risks;
 }
 
-export function computeMatchScorecard(params: { candidate: Candidate; job: Job }): MatchScorecard {
+export function computeMatchScorecard(params: { candidate: CandidateSnapshot; job: JobSnapshot }): MatchScorecard {
   const { candidate, job } = params;
 
   const { matchedSkills, missingRequiredSkills, skillFit } = computeSkillFit(candidate, job);
@@ -397,4 +388,3 @@ export function computeMatchScorecard(params: { candidate: Candidate; job: Job }
     evidence
   };
 }
-

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+// Using vitest globals: describe, it, expect, beforeEach
 import { GraphEngine } from '../GraphEngine';
 
 describe('GraphEngine', () => {

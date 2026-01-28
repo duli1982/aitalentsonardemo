@@ -1,5 +1,7 @@
 import { supabase } from './supabaseClient';
 import type { ScreeningResult } from './AutonomousScreeningAgent';
+import type { TruthCheckPack } from './TruthCheckService';
+import type { TruthCheckAnswerAssessment } from './TruthCheckAssessmentService';
 
 export type DecisionType = 'screening' | 'interview' | 'shortlist_analysis';
 export type DecisionValue = 'STRONG_PASS' | 'PASS' | 'BORDERLINE' | 'FAIL' | 'REJECTED' | 'HIRED';
@@ -109,10 +111,11 @@ class DecisionArtifactService {
     rubricName?: string;
     rubricVersion?: number;
     confidence?: number;
+    details?: Record<string, unknown>;
   }): Promise<void> {
     if (!supabase) return;
 
-    const { result, rubricName = 'Screening Rubric', rubricVersion = 1, confidence } = params;
+    const { result, rubricName = 'Screening Rubric', rubricVersion = 1, confidence, details: extraDetails } = params;
 
     // Optional: try to resolve rubric_id by name (best-effort).
     let rubricId: string | null = null;
@@ -136,7 +139,8 @@ class DecisionArtifactService {
       details: {
         questions: result.questions ?? [],
         passed: result.passed,
-        screenedAt: new Date(result.screenedAt).toISOString()
+        screenedAt: new Date(result.screenedAt).toISOString(),
+        ...(extraDetails ?? {})
       },
       rubric_id: rubricId,
       rubric_version: rubricVersion,
@@ -149,6 +153,76 @@ class DecisionArtifactService {
 
     if (error && import.meta.env.DEV) {
       console.warn('[DecisionArtifactService] Failed to persist screening artifact:', error);
+    }
+  }
+
+  async saveTruthCheckAssessment(params: {
+    candidateId: string;
+    candidateName?: string;
+    jobId: string;
+    jobTitle?: string;
+    truthCheck: TruthCheckPack;
+    answers: TruthCheckAnswerAssessment[];
+    score: number;
+    recommendation: ScreeningResult['recommendation'];
+    summary: string;
+    rubricName?: string;
+    rubricVersion?: number;
+    externalId?: string;
+  }): Promise<void> {
+    if (!supabase) return;
+
+    const {
+      candidateId,
+      candidateName,
+      jobId,
+      jobTitle,
+      truthCheck,
+      answers,
+      score,
+      recommendation,
+      summary,
+      rubricName = 'Truth Check Rubric',
+      rubricVersion = 1,
+      externalId = 'truth_check_v1'
+    } = params;
+
+    let rubricId: string | null = null;
+    try {
+      const { data } = await supabase.from('rubrics').select('id').eq('name', rubricName).maybeSingle();
+      rubricId = data?.id ?? null;
+    } catch {
+      rubricId = null;
+    }
+
+    const payload = {
+      candidate_id: candidateId,
+      candidate_name: candidateName ?? null,
+      job_id: jobId,
+      job_title: jobTitle ?? null,
+      decision_type: 'screening',
+      decision: recommendation,
+      score,
+      confidence: null,
+      summary: summary ?? null,
+      details: {
+        truthCheck,
+        answers,
+        questions: (answers || []).map((a) => ({ question: a.question, answer: a.answer, score: a.score })),
+        capturedBy: 'recruiter',
+        capturedAt: new Date().toISOString()
+      },
+      rubric_id: rubricId,
+      rubric_version: rubricVersion,
+      external_id: externalId
+    };
+
+    const { error } = await supabase
+      .from('decision_artifacts')
+      .upsert(payload, { onConflict: 'candidate_id,job_id,decision_type,external_id' });
+
+    if (error && import.meta.env.DEV) {
+      console.warn('[DecisionArtifactService] Failed to persist truth-check artifact:', error);
     }
   }
 

@@ -11,6 +11,7 @@ import * as geminiService from '../../services/geminiService';
 import { autonomousScreeningAgent, type ScreeningResult } from '../../services/AutonomousScreeningAgent';
 import { decisionArtifactService, type DecisionArtifactRecord } from '../../services/DecisionArtifactService';
 import { pipelineEventService, type PipelineEventRecord } from '../../services/PipelineEventService';
+import { toCandidateSnapshot, toJobSnapshot } from '../../utils/snapshots';
 import { aiService } from '../../services/AIService';
 import { recruitingScorecardService, type RecruitingScorecardRecord } from '../../services/RecruitingScorecardService';
 import { determineNextAction, type NextActionSuggestion } from '../../services/NextActionService';
@@ -792,7 +793,7 @@ const CandidateDetail: React.FC<CandidateDetailProps> = ({ candidate, jobs, onIn
 	                    });
 	                    break;
 	                case 'request_screening': {
-	                    const alreadyInPipeline = Boolean((candidate as any)?.pipelineStage?.[job.id]);
+	                    const alreadyInPipeline = Boolean(candidate.pipelineStage?.[job.id]);
 	                    if (!alreadyInPipeline && onAddToPipeline) {
 	                        await onAddToPipeline(candidate, job.id, 'long_list');
 	                    }
@@ -813,11 +814,13 @@ const CandidateDetail: React.FC<CandidateDetailProps> = ({ candidate, jobs, onIn
 	                    autonomousScreeningAgent.requestScreening({
 	                        candidateId: String(candidate.id),
 	                        candidateName: candidate.name,
-	                        candidateEmail: (candidate as any).email || '',
+	                        candidateEmail: candidate.email || '',
 	                        jobId: job.id,
 	                        jobTitle: job.title,
-	                        jobRequirements: Array.isArray((job as any).requiredSkills) ? (job as any).requiredSkills : [],
-	                        addedAt: new Date()
+	                        jobRequirements: job.requiredSkills || [],
+	                        addedAt: new Date(),
+	                        candidateSnapshot: toCandidateSnapshot(candidate),
+	                        jobSnapshot: toJobSnapshot(job)
 	                    });
 
 	                    // Demo UX: run the screening job immediately so the Next Action advances without waiting hours.

@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Shield, Sparkles } from 'lucide-react';
 import type { Candidate, Job } from '../../types';
 import { computeMatchScorecard, type EvidenceStrength, type MatchScorecard } from '../../services/MatchScorecardService';
+import { toCandidateSnapshot, toJobSnapshot } from '../../utils/snapshots';
 
 function badgeForStrength(strength: EvidenceStrength): string {
   if (strength === 'strong') return 'bg-green-500/15 text-green-200 border-green-500/30';
@@ -59,7 +60,7 @@ export const RecommendationScorecardPanel: React.FC<{
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<'scorecard' | 'evidence'>('scorecard');
 
-  const scorecard = useMemo<MatchScorecard>(() => computeMatchScorecard({ candidate, job }), [candidate, job]);
+  const scorecard = useMemo<MatchScorecard>(() => computeMatchScorecard({ candidate: toCandidateSnapshot(candidate), job: toJobSnapshot(job) }), [candidate, job]);
 
   return (
     <div className="mt-3 rounded-lg border border-slate-700 bg-slate-900/40 shadow-sm">
@@ -179,4 +180,3 @@ export const RecommendationScorecardPanel: React.FC<{
 };
 
 export default RecommendationScorecardPanel;
-

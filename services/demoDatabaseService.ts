@@ -12,7 +12,7 @@
 
 import type { UploadedCandidate, Job } from '../types';
 import mockCandidatesData from '../data/mockCandidates.json';
-import * as geminiService from './geminiService';
+import { fitAnalysisService } from './FitAnalysisService';
 
 export interface DemoLoadProgress {
   current: number;
@@ -302,13 +302,13 @@ export const scanDatabaseForMatches = async (
     if (i < maxAiAnalysis) {
       try {
         // AI analysis
-        const analysis = await geminiService.analyzeFit(job, candidate);
+        const analysis = await fitAnalysisService.analyze(job, candidate);
         aiAnalysisCount++;
 
         matchedCandidates.push({
           candidate,
-          matchScore: analysis.matchScore,
-          matchRationale: analysis.matchRationale
+          matchScore: analysis.score,
+          matchRationale: analysis.rationale
         });
 
         if (onProgress) {
@@ -316,7 +316,7 @@ export const scanDatabaseForMatches = async (
             current: i + 1,
             total: prescreenedCandidates.length,
             candidateName: candidate.name,
-            currentScore: analysis.matchScore,
+            currentScore: analysis.score,
             isAiAnalysis: true
           });
         }

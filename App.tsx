@@ -10,6 +10,8 @@ import CandidateJobDrawer from './components/modals/CandidateJobDrawer';
 import InterviewGuideModal from './components/modals/InterviewGuideModal';
 import SmartSearchModal from './components/modals/SmartSearchModal';
 import RAGQueryModal from './components/modals/RAGQueryModal';
+import ConfirmModal from './components/modals/ConfirmModal';
+import RoleContextPackModal from './components/modals/RoleContextPackModal';
 import { useAnalysis } from './hooks/useAnalysis';
 import { DataProvider, useData } from './contexts/DataContext';
 import { useToast } from './contexts/ToastContext';
@@ -127,6 +129,9 @@ const AppContent = () => {
   const [isCandidateJobDrawerOpen, setCandidateJobDrawerOpen] = useState(false);
   const [candidateJobDrawerCandidate, setCandidateJobDrawerCandidate] = useState<Candidate | null>(null);
   const [candidateJobDrawerJob, setCandidateJobDrawerJob] = useState<Job | null>(null);
+  const [intakePromptOpen, setIntakePromptOpen] = useState(false);
+  const [intakeJob, setIntakeJob] = useState<Job | null>(null);
+  const [roleContextPackOpen, setRoleContextPackOpen] = useState(false);
 
   const allCandidates = useMemo(() => [...internalCandidates, ...pastCandidates, ...uploadedCandidates], [internalCandidates, pastCandidates, uploadedCandidates]);
   const selectedJob = useMemo(() => jobs.find(job => job.id === selectedJobId), [jobs, selectedJobId]);
@@ -176,7 +181,12 @@ const AppContent = () => {
   } = useAnalysis({ selectedJob, onUpdateCandidate: handleUpdateCandidate, onUpdateCandidateStage: handleUpdateCandidateStage });
 
   // Wrappers for logic hooks to handle "Auto Analyze" callbacks which depend on `handleBatchAnalysis`
-  const handleAddJob = (job: Job) => handleAddJobLogic(job, handleBatchAnalysis);
+  const handleAddJob = (job: Job) => {
+    handleAddJobLogic(job, handleBatchAnalysis);
+    // Optional: prompt for intake (no gating).
+    setIntakeJob(job);
+    setIntakePromptOpen(true);
+  };
   const handleAddCandidates = (candidates: any[]) => handleAddCandidatesLogic(candidates, selectedJobId || undefined, handleBatchAnalysis);
 
   const handleHireCandidate = (candidateId: string, jobId: string) => {
@@ -431,6 +441,35 @@ const AppContent = () => {
 
       {/* Global Modals */}
       {isAddJobModalOpen && <AddJobModal onClose={() => setAddJobModalOpen(false)} onAddJob={handleAddJob} />}
+      <ConfirmModal
+        isOpen={intakePromptOpen}
+        title="Add Role Context Pack?"
+        message={
+          <div className="space-y-2">
+            <div className="text-slate-200">
+              Intake is optional, but it improves evidence, truth-check questions, and confidence for this job.
+            </div>
+            <div className="text-xs text-slate-400">You can skip now and add/edit it later from Job Details.</div>
+          </div>
+        }
+        confirmLabel="Add intake now"
+        cancelLabel="Not now"
+        onConfirm={() => {
+          setIntakePromptOpen(false);
+          setRoleContextPackOpen(true);
+        }}
+        onCancel={() => {
+          setIntakePromptOpen(false);
+        }}
+      />
+      <RoleContextPackModal
+        isOpen={roleContextPackOpen}
+        job={intakeJob}
+        onClose={() => {
+          setRoleContextPackOpen(false);
+          setIntakeJob(null);
+        }}
+      />
       {isUploadCvModalOpen && <UploadCvModal onClose={() => setUploadCvModalOpen(false)} onUpload={handleAddCandidates} />}
       {isSmartSearchModalOpen && (
         <SmartSearchModal

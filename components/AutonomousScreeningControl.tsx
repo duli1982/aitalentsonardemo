@@ -5,6 +5,7 @@ import { useData } from '../contexts/DataContext';
 import { useAllSupabaseCandidates } from '../hooks/useAllSupabaseCandidates';
 import { autonomousScreeningAgent, type ScreeningResult } from '../services/AutonomousScreeningAgent';
 import { agentSettingsService } from '../services/AgentSettingsService';
+import { toCandidateSnapshot, toJobSnapshot } from '../utils/snapshots';
 
 interface AutonomousScreeningControlProps {
     jobs: Job[];
@@ -224,7 +225,15 @@ const AutonomousScreeningControl: React.FC<AutonomousScreeningControlProps> = ({
                 jobId: selectedJob.id,
                 jobTitle: selectedJob.title,
                 jobRequirements: selectedJob.requiredSkills || [],
-                addedAt: new Date()
+                addedAt: new Date(),
+                candidateSnapshot: toCandidateSnapshot({
+                    id: String(candidate.id),
+                    name: candidate.name,
+                    email,
+                    skills: [],
+                    type: 'uploaded'
+                }),
+                jobSnapshot: toJobSnapshot(selectedJob)
             });
         };
 

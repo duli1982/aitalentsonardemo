@@ -1,6 +1,9 @@
 import { useState, useCallback } from 'react';
 import type { Job, Candidate, AnalysisResult, FitAnalysis } from '../types';
 import * as geminiService from '../services/geminiService';
+import { evidencePackService } from '../services/EvidencePackService';
+import { outreachDraftService } from '../services/OutreachDraftService';
+import { jobContextPackService } from '../services/JobContextPackService';
 
 interface UseAnalysisProps {
     selectedJob: Job | undefined;
@@ -15,7 +18,7 @@ export const useAnalysis = ({ selectedJob, onUpdateCandidate, onUpdateCandidateS
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
     const [isBatchAnalyzing, setIsBatchAnalyzing] = useState(false);
     const [batchAnalysisProgress, setBatchAnalysisProgress] = useState({ current: 0, total: 0 });
-    const [analysisState, setAnalysisState] = useState<{ type: string; candidate?: Candidate; result: AnalysisResult | null }>({ type: '', result: null });
+    const [analysisState, setAnalysisState] = useState<{ type: string; candidate?: Candidate; result: any }>({ type: '', result: null });
     const [isAnalysisModalOpen, setAnalysisModalOpen] = useState(false);
 
     const runFitAnalysis = useCallback(async (candidate: Candidate, job: Job): Promise<FitAnalysis | null> => {
@@ -52,7 +55,11 @@ export const useAnalysis = ({ selectedJob, onUpdateCandidate, onUpdateCandidateS
                 case 'HIDDEN_GEM_ANALYSIS': if (candidate) result = await geminiService.analyzeHiddenGem(selectedJob, candidate); break;
                 case 'OUTREACH':
                     if (candidate) {
-                        result = await geminiService.generateOutreachMessage(selectedJob, candidate);
+                        // Prefer evidence-pack grounded drafts (fallbacks are deterministic).
+                        const contextPack = await jobContextPackService.get(selectedJob.id);
+                        const evidencePack = await evidencePackService.build({ job: selectedJob, candidate, contextPack });
+                        const draft = await outreachDraftService.build({ job: selectedJob, candidate, evidencePack, contextPack });
+                        result = draft.body;
                     }
                     break;
                 case 'INTERVIEW_GUIDE':

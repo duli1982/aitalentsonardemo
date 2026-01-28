@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import type { Job } from '../../types';
+import type { Job, RoleContextPack } from '../../types';
 import { Briefcase, FileText, MapPin, X } from 'lucide-react';
 import { useEscapeKey } from '../../hooks/useEscapeKey';
+import RoleContextPackModal from './RoleContextPackModal';
+import { jobContextPackService } from '../../services/JobContextPackService';
 
 type JobDetailsTab = 'description' | 'requirements' | 'scorecard';
 
@@ -23,6 +25,9 @@ function tabClass(active: boolean): string {
 const JobDetailsDrawer: React.FC<JobDetailsDrawerProps> = ({ isOpen, job, onClose }) => {
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const [tab, setTab] = useState<JobDetailsTab>('description');
+  const [contextPack, setContextPack] = useState<RoleContextPack | null>(null);
+  const [contextLoading, setContextLoading] = useState(false);
+  const [contextModalOpen, setContextModalOpen] = useState(false);
 
   useEscapeKey({ active: isOpen, onEscape: onClose });
 
@@ -36,7 +41,32 @@ const JobDetailsDrawer: React.FC<JobDetailsDrawerProps> = ({ isOpen, job, onClos
     setTab('description');
   }, [isOpen, job?.id]);
 
+  useEffect(() => {
+    if (!isOpen || !job) return;
+    let cancelled = false;
+
+    setContextLoading(true);
+    jobContextPackService
+      .get(job.id)
+      .then((pack) => {
+        if (!cancelled) setContextPack(pack);
+      })
+      .finally(() => {
+        if (!cancelled) setContextLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, job?.id]);
+
   const requiredSkills = useMemo(() => (job?.requiredSkills || []).filter(Boolean), [job]);
+
+  const hasAnyContext = useMemo(() => {
+    if (!contextPack) return false;
+    const anyAnswer = Object.values(contextPack.answers || {}).some((a) => Array.isArray((a as any)?.choices) && (a as any).choices.length > 0);
+    return anyAnswer || Boolean(String(contextPack.notes || '').trim());
+  }, [contextPack]);
 
   if (!isOpen || !job) return null;
 
@@ -158,18 +188,63 @@ const JobDetailsDrawer: React.FC<JobDetailsDrawerProps> = ({ isOpen, job, onClos
           )}
 
           {tab === 'scorecard' && (
-            <div className="bg-slate-800/40 border border-slate-700/60 rounded-lg p-4 text-sm text-slate-200">
-              <div className="font-semibold text-slate-100 mb-1">Coming soon</div>
-              <div className="text-xs text-slate-400">
-                This tab will host the recruiting scorecard, calibration notes, and evidence-backed requirements.
+            <div className="space-y-4">
+              <div className="bg-slate-800/40 border border-slate-700/60 rounded-lg p-4 text-sm text-slate-200">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-semibold text-slate-100">Role Context Pack</div>
+                    <div className="text-xs text-slate-400 mt-1">
+                      Optional intake improves evidence, truth-check questions, and confidence.
+                    </div>
+                    <div className="text-xs text-slate-400 mt-2">
+                      Status:{' '}
+                      {contextLoading ? (
+                        <span className="text-slate-300">Loading…</span>
+                      ) : hasAnyContext ? (
+                        <span className="text-emerald-300">Saved</span>
+                      ) : (
+                        <span className="text-amber-300">Not added</span>
+                      )}
+                      {contextPack?.updatedAt ? (
+                        <span className="text-slate-600">{` · Updated ${new Date(contextPack.updatedAt).toLocaleDateString()}`}</span>
+                      ) : null}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setContextModalOpen(true)}
+                    className="px-3 py-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold whitespace-nowrap"
+                  >
+                    {hasAnyContext ? 'Edit intake' : 'Add intake'}
+                  </button>
+                </div>
+
+                {contextPack?.notes ? (
+                  <div className="mt-3 text-xs text-slate-300 whitespace-pre-wrap bg-slate-900/40 border border-slate-700 rounded-lg p-3">
+                    {contextPack.notes}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="bg-slate-800/40 border border-slate-700/60 rounded-lg p-4 text-sm text-slate-200">
+                <div className="font-semibold text-slate-100 mb-1">Next</div>
+                <div className="text-xs text-slate-400">
+                  This tab can also host calibration notes and evidence-backed requirements in a later iteration.
+                </div>
               </div>
             </div>
           )}
         </div>
       </aside>
+
+      <RoleContextPackModal
+        isOpen={contextModalOpen}
+        job={job}
+        onClose={() => setContextModalOpen(false)}
+        onSaved={(pack) => setContextPack(pack)}
+      />
     </div>
   );
 };
 
 export default JobDetailsDrawer;
-

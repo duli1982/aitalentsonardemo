@@ -1,18 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { inferenceEngine } from '../services/InferenceEngine';
-import { SkillBelief, SkillSignal } from '../types/inference';
-import { Shield, GitCommit, Users, Award, Eye, FileBadge, Activity, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { SkillBelief } from '../types/inference';
+import { Shield, GitCommit, Users, Award, Eye, FileBadge, Activity, TrendingUp, TrendingDown, Minus, X, Loader2 } from 'lucide-react';
 
-const SkillsPassport: React.FC = () => {
-    // Mock State - In real app, this comes from props/context
+interface SkillsPassportProps {
+    skillName: string;
+    level?: string;
+    candidateId?: string;
+    onClose?: () => void;
+}
+
+const SkillsPassport: React.FC<SkillsPassportProps> = ({ skillName, level, candidateId, onClose }) => {
     const [selectedSkill, setSelectedSkill] = useState<SkillBelief | null>(null);
 
     useEffect(() => {
-        // Initialize with a mock belief for "React.js"
-        const signals = inferenceEngine.generateMockSignals('React.js');
-        const belief = inferenceEngine.inferSkillState('React.js', signals);
+        // In a real app, we'd fetch specific evidence for this candidate + skill.
+        // For this demo, we'll generate a consistent mock based on the skill name.
+        const signals = inferenceEngine.generateMockSignals(skillName);
+        const belief = inferenceEngine.inferSkillState(skillName, signals);
         setSelectedSkill(belief);
-    }, []);
+    }, [skillName, candidateId]);
 
     const getSourceIcon = (type: string) => {
         switch (type) {
@@ -24,13 +31,22 @@ const SkillsPassport: React.FC = () => {
         }
     };
 
-    if (!selectedSkill) return <div className="p-4 text-slate-500">Loading Inference Model...</div>;
+    if (!selectedSkill) return <div className="p-4 text-slate-500 flex items-center gap-2"><Loader2 className="animate-spin" /> Loading Inference Model...</div>;
 
     return (
-        <div className="bg-slate-900 border border-slate-700 rounded-xl overflow-hidden shadow-xl">
+        <div className="bg-slate-900 border border-slate-700 rounded-xl overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
             {/* Header: Probabilistic Belief */}
-            <div className="bg-slate-800 p-6 border-b border-slate-700">
-                <div className="flex justify-between items-start mb-4">
+            <div className="bg-slate-800 p-6 border-b border-slate-700 relative">
+                {onClose && (
+                    <button
+                        onClick={onClose}
+                        className="absolute right-4 top-4 p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-full transition-colors"
+                    >
+                        <X size={20} />
+                    </button>
+                )}
+
+                <div className="flex justify-between items-start mb-4 pr-10">
                     <div>
                         <h2 className="text-xl font-bold text-white flex items-center gap-2">
                             <Award className="text-purple-400" />
@@ -43,8 +59,8 @@ const SkillsPassport: React.FC = () => {
                         </div>
                     </div>
                     <div className={`px-3 py-1 rounded-full border text-sm font-bold flex items-center gap-2 ${selectedSkill.trend === 'RISING' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' :
-                            selectedSkill.trend === 'DECAYING' ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' :
-                                'bg-slate-700/50 border-slate-600 text-slate-300'
+                        selectedSkill.trend === 'DECAYING' ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' :
+                            'bg-slate-700/50 border-slate-600 text-slate-300'
                         }`}>
                         {selectedSkill.trend === 'RISING' && <TrendingUp size={14} />}
                         {selectedSkill.trend === 'DECAYING' && <TrendingDown size={14} />}

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import type { Candidate, Job, PipelineStage } from '../../types';
+import type { Candidate, EvidencePack, Job, PipelineStage } from '../../types';
 import { X, Briefcase, MapPin, Layers, ArrowRight, UserX, Calendar, Sparkles, ExternalLink } from 'lucide-react';
 import ScheduleInterviewModal from './ScheduleInterviewModal';
 import { decisionArtifactService, type DecisionArtifactRecord } from '../../services/DecisionArtifactService';
@@ -10,6 +10,9 @@ import { autonomousScreeningAgent } from '../../services/AutonomousScreeningAgen
 import { useEscapeKey } from '../../hooks/useEscapeKey';
 import GraphExplorer from '../GraphExplorer';
 import { useSupabaseCandidates } from '../../hooks/useSupabaseCandidates';
+import DispositionReasonModal, { type DispositionPayload } from './DispositionReasonModal';
+import PreHmTruthCheckModal from './PreHmTruthCheckModal';
+import { toCandidateSnapshot, toJobSnapshot } from '../../utils/snapshots';
 
 type DrawerTab = 'summary' | 'evidence' | 'artifacts' | 'timeline';
 
@@ -86,6 +89,10 @@ const CandidateJobDrawer: React.FC<CandidateJobDrawerProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
   const [graphOpen, setGraphOpen] = useState(false);
+  const [dispositionModalOpen, setDispositionModalOpen] = useState(false);
+  const [pendingDispositionStage, setPendingDispositionStage] = useState<PipelineStage | null>(null);
+  const [pendingDispositionFromStage, setPendingDispositionFromStage] = useState<PipelineStage | null>(null);
+  const [truthCheckOpen, setTruthCheckOpen] = useState(false);
 
   useEscapeKey({ active: isOpen, onEscape: onClose });
 
@@ -139,6 +146,15 @@ const CandidateJobDrawer: React.FC<CandidateJobDrawerProps> = ({
     if (!candidate || !job) return undefined;
     return candidate.matchScores?.[job.id];
   }, [candidate, job]);
+
+  const latestShortlist = useMemo(() => {
+    return artifacts.find((a) => a.decisionType === 'shortlist_analysis') ?? null;
+  }, [artifacts]);
+
+  const evidencePack = useMemo<EvidencePack | null>(() => {
+    const pack = (latestShortlist?.details as any)?.evidencePack;
+    return pack && typeof pack === 'object' ? (pack as EvidencePack) : null;
+  }, [latestShortlist]);
 
   const currentStage = useMemo(() => {
     if (!candidate || !job) return null;
@@ -227,6 +243,57 @@ const CandidateJobDrawer: React.FC<CandidateJobDrawerProps> = ({
 
   const isInPipeline = Boolean((candidate as any).pipelineStage?.[job.id] || (candidate as any).stage);
 
+  const openDispositionCapture = (stage: PipelineStage) => {
+    setPendingDispositionStage(stage);
+    setPendingDispositionFromStage(currentStage);
+    setDispositionModalOpen(true);
+  };
+
+  const closeDispositionCapture = () => {
+    setDispositionModalOpen(false);
+    setPendingDispositionStage(null);
+    setPendingDispositionFromStage(null);
+  };
+
+  const handleStageChange = (nextStage: PipelineStage) => {
+    if (nextStage === 'rejected' || nextStage === 'offer' || nextStage === 'hired') {
+      openDispositionCapture(nextStage);
+      return;
+    }
+    onUpdateCandidateStage(candidate.id, job.id, nextStage);
+  };
+
+  const handleDispositionSubmit = async (payload: DispositionPayload) => {
+    const toStage = payload.stage;
+    const fromStage = pendingDispositionFromStage ?? currentStage ?? undefined;
+    const reason =
+      payload.reasonCode === 'other'
+        ? (payload.reasonText || '').trim() || 'other'
+        : payload.reasonCode;
+
+    await pipelineEventService.logEvent({
+      candidateId: candidate.id,
+      candidateName: candidate.name,
+      jobId: job.id,
+      jobTitle: job.title,
+      eventType: 'DISPOSITION_RECORDED',
+      actorType: 'user',
+      fromStage: fromStage ?? undefined,
+      toStage,
+      summary: `${stageLabel(toStage)} — ${reason}`,
+      metadata: {
+        disposition: payload,
+        capturedAt: new Date().toISOString()
+      }
+    });
+
+    closeDispositionCapture();
+    onUpdateCandidateStage(candidate.id, job.id, toStage);
+
+    const refreshed = await pipelineEventService.listForCandidate(candidate.id, 150);
+    setEvents((refreshed || []).filter((e) => e.jobId === job.id));
+  };
+
   const handlePrimaryAction = async () => {
     if (!nextAction) return;
     if (nextAction.type === 'add_pipeline') {
@@ -234,7 +301,7 @@ const CandidateJobDrawer: React.FC<CandidateJobDrawerProps> = ({
       return;
     }
     if (nextAction.type === 'move_rejected') {
-      onUpdateCandidateStage(candidate.id, nextAction.job.id, 'rejected');
+      openDispositionCapture('rejected');
       return;
     }
     if (nextAction.type === 'request_screening') {
@@ -246,7 +313,9 @@ const CandidateJobDrawer: React.FC<CandidateJobDrawerProps> = ({
         jobId: job.id,
         jobTitle: job.title,
         jobRequirements: job.requiredSkills || [],
-        addedAt: new Date()
+        addedAt: new Date(),
+        candidateSnapshot: toCandidateSnapshot(candidate),
+        jobSnapshot: toJobSnapshot(job)
       });
       onUpdateCandidateStage(candidate.id, job.id, 'screening');
       return;
@@ -263,6 +332,9 @@ const CandidateJobDrawer: React.FC<CandidateJobDrawerProps> = ({
   const shortlistArtifact = latestArtifact('shortlist_analysis');
   const screeningArtifact = latestArtifact('screening');
   const interviewArtifact = latestArtifact('interview');
+  const truthCheckArtifact = useMemo(() => {
+    return artifacts.find((a) => a.decisionType === 'screening' && a.externalId === 'truth_check_v1') ?? null;
+  }, [artifacts]);
 
   return (
     <div className="fixed inset-0 z-[110] bg-black/60 backdrop-blur-sm flex justify-end" onClick={onClose}>
@@ -506,6 +578,42 @@ const CandidateJobDrawer: React.FC<CandidateJobDrawerProps> = ({
 
           {tab === 'evidence' && (
             <div className="space-y-4">
+              {evidencePack ? (
+                <div className="bg-slate-800/40 border border-slate-700 rounded-xl p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-100">Evidence Pack</div>
+                      <div className="text-xs text-slate-400 mt-1">
+                        Confidence: {Math.round((evidencePack.confidence ?? 0) * 100)}% · Missing: {(evidencePack.missing || []).slice(0, 3).join(' · ') || 'None'}
+                      </div>
+                    </div>
+                    <div className="text-[11px] text-slate-500 whitespace-nowrap">{formatDateTime(evidencePack.createdAt)}</div>
+                  </div>
+
+                  <div className="mt-3 space-y-2">
+                    {(evidencePack.matchReasons || []).slice(0, 3).map((r, idx) => (
+                      <div key={`${idx}-${r.title}`} className="text-xs text-slate-200">
+                        <span className="text-slate-400">{idx + 1}.</span> {r.claim}
+                        {r.snippet?.text ? <span className="text-slate-400">{` “${r.snippet.text}”`}</span> : null}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-3 text-xs text-amber-200">
+                    <span className="font-semibold text-amber-300">Risk:</span> {evidencePack.risk?.statement}{' '}
+                    <span className="text-slate-300">{evidencePack.risk?.mitigation}</span>
+                  </div>
+
+                  <div className="mt-3 space-y-1">
+                    {(evidencePack.truthCheckPreviewQuestions || []).slice(0, 2).map((q, idx) => (
+                      <div key={`${idx}-${q}`} className="text-[11px] text-slate-300">
+                        <span className="text-slate-400">Truth-check:</span> {q}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
               <div className="bg-slate-800/40 border border-slate-700 rounded-xl p-4">
                 <div className="text-sm font-semibold text-slate-100 mb-3">Semantic Evidence</div>
                 <div className="text-xs text-slate-400 mb-2">Matched skills</div>
@@ -614,6 +722,34 @@ const CandidateJobDrawer: React.FC<CandidateJobDrawerProps> = ({
                         <div className="min-w-0">
                           <div className="text-xs font-semibold text-slate-200">{e.eventType}</div>
                           <div className="text-[11px] text-slate-300 mt-1">{e.summary}</div>
+                          {typeof (e.metadata as any)?.disposition === 'object' && (e.metadata as any)?.disposition ? (
+                            <div className="mt-2 text-[11px] text-slate-300 space-y-1">
+                              <div className="text-slate-400">
+                                Reason:{' '}
+                                <span className="text-slate-200">
+                                  {(e.metadata as any).disposition.reasonCode === 'other'
+                                    ? (e.metadata as any).disposition.reasonText || 'other'
+                                    : (e.metadata as any).disposition.reasonCode}
+                                </span>
+                              </div>
+                              {(e.metadata as any).disposition.notes ? (
+                                <div className="text-slate-400">
+                                  Notes: <span className="text-slate-200">{(e.metadata as any).disposition.notes}</span>
+                                </div>
+                              ) : null}
+                              {(e.metadata as any).disposition.compDelta ? (
+                                <div className="text-slate-400">
+                                  Comp delta: <span className="text-slate-200">{(e.metadata as any).disposition.compDelta}</span>
+                                </div>
+                              ) : null}
+                              {(e.metadata as any).disposition.competingOffer ? (
+                                <div className="text-slate-400">
+                                  Competing offer:{' '}
+                                  <span className="text-slate-200">{(e.metadata as any).disposition.competingOffer}</span>
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
                           {(e.fromStage || e.toStage) && (
                             <div className="text-[11px] text-slate-500 mt-1">
                               {e.fromStage || '?'} → {e.toStage || '?'} • {e.actorType}
@@ -647,7 +783,7 @@ const CandidateJobDrawer: React.FC<CandidateJobDrawerProps> = ({
                 <label className="text-xs text-slate-400">Move stage</label>
                 <select
                   value={currentStage || 'new'}
-                  onChange={(e) => onUpdateCandidateStage(candidate.id, job.id, e.target.value as PipelineStage)}
+                  onChange={(e) => handleStageChange(e.target.value as PipelineStage)}
                   className="flex-1 px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
                 >
                   <option value="sourced">Sourced</option>
@@ -667,6 +803,13 @@ const CandidateJobDrawer: React.FC<CandidateJobDrawerProps> = ({
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
+              onClick={() => setTruthCheckOpen(true)}
+              className="px-3 py-2 rounded-lg bg-purple-600/15 border border-purple-500/30 text-purple-200 hover:bg-purple-600/25 text-sm font-semibold"
+            >
+              Pre‑HM Truth Check
+            </button>
+            <button
+              type="button"
               onClick={() => {
                 const email = candidate.email || `${candidate.id}@example.com`;
                 autonomousScreeningAgent.requestScreening({
@@ -676,7 +819,9 @@ const CandidateJobDrawer: React.FC<CandidateJobDrawerProps> = ({
                   jobId: job.id,
                   jobTitle: job.title,
                   jobRequirements: job.requiredSkills || [],
-                  addedAt: new Date()
+                  addedAt: new Date(),
+                  candidateSnapshot: toCandidateSnapshot(candidate),
+                  jobSnapshot: toJobSnapshot(job)
                 });
                 onUpdateCandidateStage(candidate.id, job.id, 'screening');
               }}
@@ -687,14 +832,14 @@ const CandidateJobDrawer: React.FC<CandidateJobDrawerProps> = ({
             <button
               type="button"
               onClick={() => setScheduleModalOpen(true)}
-              className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 text-sm font-semibold inline-flex items-center justify-center gap-2"
+              className="col-span-2 px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 text-sm font-semibold inline-flex items-center justify-center gap-2"
             >
               <Calendar className="h-4 w-4" />
               Schedule
             </button>
             <button
               type="button"
-              onClick={() => onUpdateCandidateStage(candidate.id, job.id, 'rejected')}
+              onClick={() => openDispositionCapture('rejected')}
               className="col-span-2 px-3 py-2 rounded-lg bg-red-500/15 border border-red-500/30 text-red-200 hover:bg-red-500/25 text-sm font-semibold inline-flex items-center justify-center gap-2"
             >
               <UserX className="h-4 w-4" />
@@ -712,6 +857,31 @@ const CandidateJobDrawer: React.FC<CandidateJobDrawerProps> = ({
           job={job as any}
         />
       )}
+
+      {pendingDispositionStage && (
+        <DispositionReasonModal
+          isOpen={dispositionModalOpen}
+          stage={pendingDispositionStage}
+          candidateName={candidate.name}
+          jobTitle={job.title}
+          onCancel={closeDispositionCapture}
+          onSubmit={handleDispositionSubmit}
+        />
+      )}
+
+      {truthCheckOpen ? (
+        <PreHmTruthCheckModal
+          isOpen={truthCheckOpen}
+          candidate={candidate}
+          job={job}
+          existingArtifact={truthCheckArtifact}
+          onClose={() => setTruthCheckOpen(false)}
+          onSaved={async () => {
+            const artifactRows = await decisionArtifactService.listArtifactsForCandidate({ candidateId: candidate.id, limit: 250 });
+            setArtifacts((artifactRows || []).filter((a) => a.jobId === job.id));
+          }}
+        />
+      ) : null}
     </div>
   );
 };

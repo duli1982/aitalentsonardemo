@@ -126,9 +126,9 @@ This document outlines the complete journey from the current proof-of-concept to
 - [ ] PATCH /jobs/:id
 - [ ] DELETE /jobs/:id (soft delete)
 - [ ] GET /candidates (with filters, pagination)
-- [ ] POST /candidates/upload (multipart form)
+- [x] POST /candidates/upload (multipart form)
 - [ ] Integrate AWS S3 for CV storage
-- [ ] Connect Gemini API for CV parsing
+- [x] Connect Gemini API for CV parsing
 - [ ] Add search functionality (PostgreSQL full-text)
 
 **Deliverables:**
@@ -183,8 +183,8 @@ This document outlines the complete journey from the current proof-of-concept to
 - [ ] POST /jobs/:id/analyze-top (batch analysis)
 - [ ] GET /jobs/:id/analysis-status (progress)
 - [ ] GET /jobs/:jobId/matches (top matches with AI data)
-- [ ] Implement caching for expensive operations
-- [ ] Add rate limiting for AI calls
+- [x] Implement caching for expensive operations
+- [x] Add rate limiting for AI calls
 - [ ] Add cost tracking for API usage
 
 **Deliverables:**
@@ -267,7 +267,7 @@ This document outlines the complete journey from the current proof-of-concept to
 - Implement loading states
 
 **Tasks:**
-- [ ] Create API client service (axios/fetch)
+- [x] Create API client service (axios/fetch)
 - [ ] Replace localStorage with API calls
 - [ ] Add authentication flow to frontend
 - [ ] Implement login/register pages
@@ -296,9 +296,9 @@ This document outlines the complete journey from the current proof-of-concept to
 - Performance optimization
 
 **Tasks:**
-- [ ] Export mock data from frontend
-- [ ] Create migration script
-- [ ] Import data to PostgreSQL
+- [x] Export mock data from frontend
+- [x] Create migration script
+- [x] Import data to PostgreSQL
 - [ ] Verify data integrity
 - [ ] Test all user flows
 - [ ] Fix identified bugs
@@ -330,8 +330,8 @@ This document outlines the complete journey from the current proof-of-concept to
 - [ ] GET /analytics/dashboard endpoint
 - [ ] GET /analytics/insights endpoint
 - [ ] Create analytics queries (PostgreSQL)
-- [ ] Build frontend analytics view
-- [ ] Add charts (Chart.js/Recharts)
+- [x] Build frontend analytics view
+- [x] Add charts (Chart.js/Recharts)
 - [ ] Create exportable reports (CSV/PDF)
 - [ ] Add cost tracking dashboard
 - [ ] Implement usage metrics
@@ -355,14 +355,14 @@ This document outlines the complete journey from the current proof-of-concept to
 
 **Tasks:**
 - [ ] Create notifications table
-- [ ] Implement in-app notifications
+- [x] Implement in-app notifications
 - [ ] Set up SendGrid for emails
 - [ ] Create email templates
 - [ ] Add notification preferences
 - [ ] Create comments system
 - [ ] Add @mentions
 - [ ] Implement real-time updates (Socket.io)
-- [ ] Add activity feed
+- [x] Add activity feed
 
 **Deliverables:**
 - ✅ Notifications working
@@ -462,6 +462,17 @@ This document outlines the complete journey from the current proof-of-concept to
 **Time:** 30 hours
 
 ---
+
+## What’s Still Missing (to complete the unchecked items)
+
+The current app is a frontend-first demo with optional Supabase plus Vercel-style API routes (resume upload/parse/embed). The remaining unchecked items are the “real production platform” work:
+
+- Backend platform: standalone API (Express/Nest), Prisma/ORM, REST endpoints for jobs/candidates/matching, and a real job queue (Bull/Redis) with workers.
+- Database/infra: provisioning Postgres/Redis, backups, connection pooling, indexes/perf tuning, and load testing.
+- Auth/security: users table, JWT sessions, RBAC, HTTPS, rate limiting at the edge/API, monitoring (Sentry/Datadog), and security hardening.
+- Full migration: formal data export/import, integrity verification, and removing localStorage as the primary state store.
+- Collaboration + integrations: comments/@mentions, real-time updates, notification preferences, and email/calendar/ATS integrations.
+- Testing/QA: meaningful unit/integration/E2E coverage for recruiter workflows and automated CI.
 
 ## 📊 Timeline Summary
 

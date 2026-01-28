@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { X, Mail, Loader2, Copy, Check, Send } from 'lucide-react';
 import type { Candidate, Job } from '../../types';
-import * as geminiService from '../../services/geminiService';
+import { evidencePackService } from '../../services/EvidencePackService';
+import { outreachDraftService } from '../../services/OutreachDraftService';
+import { jobContextPackService } from '../../services/JobContextPackService';
 import { useToast } from '../../contexts/ToastContext';
+import { toCandidateSnapshot, toJobSnapshot } from '../../utils/snapshots';
 
 interface BulkOutreachModalProps {
     isOpen: boolean;
@@ -33,9 +36,14 @@ const BulkOutreachModal: React.FC<BulkOutreachModalProps> = ({ isOpen, onClose, 
     const generateMessages = async () => {
         setIsGenerating(true);
         try {
+            const contextPack = await jobContextPackService.get(job.id);
+            const jobSnap = toJobSnapshot(job);
             const generatedMessages = await Promise.all(
                 candidates.map(async (candidate) => {
-                    const message = await geminiService.generateOutreachMessage(job, candidate);
+                    const candidateSnap = toCandidateSnapshot(candidate);
+                    const evidencePack = await evidencePackService.build({ job: jobSnap, candidate: candidateSnap, contextPack });
+                    const draft = await outreachDraftService.build({ job: jobSnap, candidate: candidateSnap, evidencePack, contextPack });
+                    const message = draft.body;
                     return {
                         candidateId: candidate.id,
                         candidateName: candidate.name,

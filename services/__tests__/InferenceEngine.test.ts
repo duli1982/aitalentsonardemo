@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+// Using vitest globals: describe, it, expect, beforeEach
 import { InferenceEngine } from '../InferenceEngine';
 import { SkillSignal } from '../../types/inference';
 

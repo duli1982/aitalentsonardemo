@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import type { Job } from '../../types';
 import { X, PlusCircle, Sparkles, Loader2, CheckCircle, Edit2, ArrowRight, ArrowLeft } from 'lucide-react';
-import * as geminiService from '../../services/geminiService';
+import { jobRequirementsExtractionService } from '../../services/JobRequirementsExtractionService';
 
 interface AddJobModalProps {
   onClose: () => void;
@@ -36,7 +36,7 @@ const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onAddJob }) => {
     setAnalysisError(null);
 
     try {
-      const extracted = await geminiService.extractJobRequirements(rawDescription);
+      const extracted = await jobRequirementsExtractionService.extract(rawDescription);
 
       // Populate fields with extracted data
       setTitle(extracted.suggestedTitle);

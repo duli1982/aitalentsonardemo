@@ -13,6 +13,12 @@ import { pipelineEventService } from './PipelineEventService';
 import { processingMarkerService } from './ProcessingMarkerService';
 import type { AgentMode } from './AgentSettingsService';
 import { proposedActionService } from './ProposedActionService';
+import type { CandidateSnapshot, JobSnapshot } from '../types';
+import { jobContextPackService } from './JobContextPackService';
+import { evidencePackService } from './EvidencePackService';
+import { outreachDraftService } from './OutreachDraftService';
+import { truthCheckService, detectGenericAnswer, type TruthCheckQuestion } from './TruthCheckService';
+import { toCandidateSnapshot, toJobSnapshot } from '../utils/snapshots';
 
 export interface ScreeningCandidate {
     candidateId: string;
@@ -22,6 +28,8 @@ export interface ScreeningCandidate {
     jobTitle: string;
     jobRequirements: string[];
     addedAt: Date;
+    candidateSnapshot?: CandidateSnapshot;
+    jobSnapshot?: JobSnapshot;
 }
 
 export interface ScreeningResult {
@@ -40,6 +48,7 @@ export interface ScreeningResult {
     recommendation: 'STRONG_PASS' | 'PASS' | 'BORDERLINE' | 'FAIL';
     summary: string;
     screenedAt: Date;
+    details?: Record<string, unknown>;
 }
 
 class AutonomousScreeningAgent {
@@ -193,7 +202,8 @@ class AutonomousScreeningAgent {
                 void decisionArtifactService.saveScreeningResult({
                     result,
                     rubricName: 'Screening Rubric',
-                    rubricVersion: 1
+                    rubricVersion: 1,
+                    details: result.details
                 });
 
                 void pipelineEventService.logEvent({
@@ -426,11 +436,71 @@ class AutonomousScreeningAgent {
     private async conductScreen(candidate: ScreeningCandidate): Promise<ScreeningResult> {
         console.log(`[AutonomousScreeningAgent] Conducting screen for ${candidate.candidateName}...`);
 
-        // Generate screening questions based on job requirements
-        const questions = this.generateQuestions(candidate.jobRequirements);
+        const effectiveJob: JobSnapshot =
+            candidate.jobSnapshot ??
+            toJobSnapshot({
+                id: candidate.jobId,
+                title: candidate.jobTitle,
+                department: '',
+                location: '',
+                requiredSkills: candidate.jobRequirements || [],
+                description: '',
+                status: 'open'
+            });
+
+        const effectiveCandidate: CandidateSnapshot =
+            candidate.candidateSnapshot ??
+            toCandidateSnapshot({
+                id: candidate.candidateId,
+                name: candidate.candidateName,
+                email: candidate.candidateEmail,
+                skills: [],
+                type: 'uploaded'
+            });
+
+        const contextPack = await jobContextPackService.get(effectiveJob.id);
+        const evidencePack = await evidencePackService.build({ job: effectiveJob, candidate: effectiveCandidate, contextPack });
+        const outreachDraft = await outreachDraftService.build({
+            job: effectiveJob,
+            candidate: effectiveCandidate,
+            evidencePack,
+            contextPack
+        });
+
+        pulseService.addEvent({
+            type: 'AGENT_ACTION',
+            message: `Outreach drafted for ${candidate.candidateName} (${candidate.jobTitle}). Truth-check questions queued next.`,
+            severity: 'info',
+            metadata: {
+                candidateId: candidate.candidateId,
+                jobId: candidate.jobId,
+                agentType: 'SCREENING',
+                actionLink: '/agent-inbox'
+            }
+        });
+
+        void pipelineEventService.logEvent({
+            candidateId: candidate.candidateId,
+            candidateName: candidate.candidateName,
+            jobId: candidate.jobId,
+            jobTitle: candidate.jobTitle,
+            eventType: 'OUTREACH_DRAFTED',
+            actorType: 'agent',
+            actorId: 'screening-agent',
+            summary: `Outreach drafted (evidence-based).`,
+            metadata: {
+                subject: outreachDraft.subject,
+                method: outreachDraft.method,
+                evidencePackVersion: evidencePack.version
+            }
+        });
+
+        // Generate truth-check questions (role-tailored) with rubric.
+        const truthCheck = await truthCheckService.build({ job: effectiveJob, candidate: effectiveCandidate, contextPack });
+        const questions = truthCheck.questions.map((q) => q.question);
 
         // Simulate candidate responses (in real app: send email/SMS or conduct chat)
-        const qaResults = await this.simulateScreening(questions, candidate);
+        const qaResults = await this.simulateTruthCheckScreening(truthCheck.questions, candidate);
 
         // Calculate overall score
         const avgScore = qaResults.reduce((sum, qa) => sum + qa.score, 0) / qaResults.length;
@@ -457,7 +527,13 @@ class AutonomousScreeningAgent {
             questions: qaResults,
             recommendation,
             summary,
-            screenedAt: new Date()
+            screenedAt: new Date(),
+            details: {
+                evidencePack,
+                outreachDraft,
+                truthCheck,
+                genericAnswerPolicy: 'Detect generic answers and require a specific “last time” example before advancing.'
+            }
         };
     }
 
@@ -525,12 +601,42 @@ class AutonomousScreeningAgent {
      * Score an answer (simplified - real version uses AI)
      */
     private scoreAnswer(question: string, answer: string): number {
-        // Random score between 50-95 for simulation
-        // Real implementation would use:
-        // - AI to evaluate answer quality
-        // - Keyword matching for technical skills
-        // - Sentiment analysis
-        return 50 + Math.floor(Math.random() * 45);
+        // Heuristic scoring with generic-answer penalties.
+        const base = 55 + Math.floor(Math.random() * 35); // 55-90
+        const generic = detectGenericAnswer(answer);
+        const hasNumbers = /\d/.test(answer);
+        const mentionsTradeoff = /\b(tradeoff|constraint|decision|because)\b/i.test(answer);
+
+        let score = base;
+        if (generic.isGeneric) score -= 30;
+        if (hasNumbers) score += 6;
+        if (mentionsTradeoff) score += 6;
+        if (String(question).toLowerCase().includes('production') && /\b(deploy|ship|release|prod)\b/i.test(answer)) score += 4;
+
+        return Math.max(0, Math.min(100, Math.round(score)));
+    }
+
+    private async simulateTruthCheckScreening(
+        questions: TruthCheckQuestion[],
+        candidate: ScreeningCandidate
+    ): Promise<{ question: string; answer: string; score: number }[]> {
+        const results: { question: string; answer: string; score: number }[] = [];
+
+        for (const q of questions) {
+            const answer = this.generateMockAnswer(q.question);
+            const score = this.scoreAnswer(q.question, answer);
+
+            // If generic, force a more specific follow-up (demo behavior).
+            const generic = detectGenericAnswer(answer);
+            const finalAnswer = generic.isGeneric
+                ? `${answer}\n\nFollow-up: Please describe one specific example (when, what you built, what changed, and how you measured it).`
+                : answer;
+
+            results.push({ question: q.question, answer: finalAnswer, score });
+            await new Promise(resolve => setTimeout(resolve, 200));
+        }
+
+        return results;
     }
 
     /**

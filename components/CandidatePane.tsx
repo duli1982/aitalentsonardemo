@@ -1,13 +1,16 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import type { Candidate, Job } from '../types';
+import type { Candidate, EvidencePack, Job, RoleContextPack } from '../types';
 import SkillsPassport from './SkillsPassport';
-import { Users, UserCheck, UploadCloud, Loader2, Diamond, TrendingUp, MessageSquare, Briefcase, ThumbsUp, ThumbsDown, Sparkles, Zap, Trophy, ArrowRight, Microscope, Building2, Clock, Globe, FileText, CheckCircle, Search, Mail, Phone, MapPin, Calendar, Download, ExternalLink, ChevronDown, ChevronUp, Play, Award, X, Database, RefreshCw, Filter, GraduationCap, Star, PlusCircle } from 'lucide-react';
+import { Users, UserCheck, UploadCloud, Loader2, Diamond, TrendingUp, MessageSquare, Briefcase, ThumbsUp, ThumbsDown, Sparkles, Zap, Trophy, ArrowRight, Microscope, Building2, Clock, Globe, FileText, CheckCircle, Search, Mail, Phone, MapPin, Calendar, Download, ExternalLink, ChevronDown, ChevronUp, Play, Award, X, Database, RefreshCw, Filter, GraduationCap, Star, PlusCircle, Fingerprint, Shield, Info, AlertTriangle, UserPlus, ListChecks, CalendarDays } from 'lucide-react';
 import { useData } from '../contexts/DataContext';
 import { useSupabaseCandidates } from '../hooks/useSupabaseCandidates';
 import { decisionArtifactService } from '../services/DecisionArtifactService';
 import { pipelineEventService } from '../services/PipelineEventService';
 import { fitAnalysisService } from '../services/FitAnalysisService';
+import { evidencePackService } from '../services/EvidencePackService';
+import { jobContextPackService } from '../services/JobContextPackService';
 import RecordAssessmentModal from './modals/RecordAssessmentModal';
+import { toCandidateSnapshot, toJobSnapshot } from '../utils/snapshots';
 
 interface CandidatePaneProps {
   job: Job | null;
@@ -67,6 +70,7 @@ const SourceChip: React.FC<{
 const CandidateCard: React.FC<{
   candidate: Candidate;
   job: Job;
+  evidencePack?: EvidencePack;
   onSelect?: (candidate: Candidate) => void;
   onInitiateAnalysis: (type: string, candidate: Candidate) => void;
   onFeedback: (candidateId: string, jobId: string, feedback: 'positive' | 'negative') => void;
@@ -75,12 +79,13 @@ const CandidateCard: React.FC<{
   onRecordAssessment?: (candidate: Candidate) => void;
   isLoading: boolean;
   loadingCandidateId: string | null;
-}> = ({ candidate, job, onSelect, onInitiateAnalysis, onFeedback, onAddToPipeline, onViewProfile, onRecordAssessment, isLoading, loadingCandidateId }) => {
+}> = ({ candidate, job, evidencePack, onSelect, onInitiateAnalysis, onFeedback, onAddToPipeline, onViewProfile, onRecordAssessment, isLoading, loadingCandidateId }) => {
   const isCurrentCardLoading = isLoading && loadingCandidateId === candidate.id;
   const matchScore = candidate.matchScores?.[job.id];
   const matchRationale = candidate.matchRationales?.[job.id];
   const feedback = candidate.feedback?.[job.id] ?? 'none';
   const isInPipeline = Boolean((candidate as any).pipelineStage?.[job.id]);
+  const [skillsPassportSkill, setSkillsPassportSkill] = useState<string | null>(null);
 
   // Extract company and school data
   const getCompanySchoolData = () => {
@@ -205,10 +210,178 @@ const CandidateCard: React.FC<{
           )}
         </div>
 
-        {/* Match Rationale */}
-        <p className="text-xs text-gray-400 mb-4 min-h-[2.5rem] leading-relaxed">
-          {matchRationale || 'No analysis data available. Run detailed analysis to inspect fit.'}
-        </p>
+        {/* Evidence-first summary (optional; falls back to rationale) */}
+        {evidencePack ? (
+          <div className="mb-4 rounded-lg border border-slate-700 bg-slate-900/30 p-3 space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-700/50 pb-2">
+              <div className="text-xs font-semibold text-slate-200 flex items-center gap-2">
+                <Microscope size={14} className="text-sky-400" />
+                Evidence & Risk
+              </div>
+              <div className="text-[11px] text-slate-400">
+                Confidence: <span className={evidencePack.confidence > 0.7 ? 'text-green-400' : evidencePack.confidence > 0.4 ? 'text-yellow-400' : 'text-red-400'}>{Math.round((evidencePack.confidence ?? 0) * 100)}%</span>
+              </div>
+            </div>
+
+            {/* Match Reasons */}
+            <div className="space-y-1.5">
+              {evidencePack.matchReasons?.slice(0, 3).map((r, idx) => (
+                <div key={`${r.title}-${idx}`} className="text-[11px] text-slate-300 bg-slate-800/50 p-2 rounded border border-slate-700/50">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <CheckCircle size={10} className="text-emerald-500/70" />
+                    <span className="font-medium text-emerald-100">{r.title}</span>
+                  </div>
+                  <div className="pl-4.5 text-slate-400 leading-tight">
+                    {r.claim}
+                    {r.snippet?.text && <span className="text-slate-500 italic block mt-0.5 border-l-2 border-slate-600 pl-1.5 ml-0.5">“{r.snippet.text}”</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Conspicuous Omissions (North Star) */}
+            {evidencePack.conspicuousOmissions && evidencePack.conspicuousOmissions.length > 0 && (
+              <div className="bg-amber-950/20 border border-amber-900/30 rounded p-2">
+                <div className="text-[11px] font-semibold text-amber-500 mb-1 flex items-center gap-1.5">
+                  <Fingerprint size={12} />
+                  Conspicuous Omissions
+                </div>
+                {evidencePack.conspicuousOmissions.map((o, idx) => (
+                  <div key={idx} className="text-[11px] text-amber-200/80 pl-4 relative">
+                    <span className="absolute left-1 top-1.5 w-1 h-1 bg-amber-500/50 rounded-full"></span>
+                    <span className="font-medium text-amber-200">{o.topic}:</span> {o.reason}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Risk & Mitigation */}
+            <div className="text-[11px] bg-slate-800/30 p-2 rounded border border-slate-700/50">
+              <div className="text-slate-400 mb-0.5 text-[10px] uppercase tracking-wider font-semibold">Primary Risk</div>
+              <div className="text-amber-200 mb-1">
+                {evidencePack.risk?.statement}
+              </div>
+              <div className="text-slate-400 flex items-start gap-1.5 border-t border-slate-700/50 pt-1 mt-1">
+                <Shield size={10} className="mt-0.5 text-slate-500" />
+                <span>{evidencePack.risk?.mitigation}</span>
+              </div>
+            </div>
+
+            {/* PRE-MORTEM (Regret Reduction) */}
+            {evidencePack.preMortemAnalysis && evidencePack.preMortemAnalysis.length > 0 && (
+              <div className="bg-red-950/20 border border-red-900/30 p-2 rounded relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-1 opacity-10 group-hover:opacity-30 transition-opacity">
+                  <AlertTriangle size={32} className="text-red-500" />
+                </div>
+                <div className="text-[11px] font-semibold text-red-400 mb-1 flex items-center gap-1.5 relative z-10">
+                  <AlertTriangle size={12} />
+                  Pre-Mortem (Potential Failure Modes)
+                </div>
+                <div className="space-y-1.5 relative z-10">
+                  {evidencePack.preMortemAnalysis.map((pm, idx) => (
+                    <div key={idx} className="text-[10px] leading-tight">
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="text-red-200 font-medium font-mono">{pm.failureMode}</span>
+                        <span className={`px-1.5 rounded-full text-[9px] border ${pm.probability === 'High' ? 'bg-red-500/20 text-red-300 border-red-500/40' : 'bg-orange-500/20 text-orange-300 border-orange-500/40'}`}>{pm.probability} Prob.</span>
+                      </div>
+                      <div className="text-slate-400 pl-2 border-l border-red-900/40">
+                        Prevention: <span className="text-slate-300">{pm.prevention}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Reference Check Guide (Phase 3) */}
+            {evidencePack.referenceCheckGuide && evidencePack.referenceCheckGuide.length > 0 && (
+              <div className="bg-blue-950/20 border border-blue-900/30 p-2 rounded">
+                <div className="text-[11px] font-semibold text-blue-400 mb-1 flex items-center gap-1.5">
+                  <ListChecks size={12} />
+                  Precision Reference Checks
+                </div>
+                <div className="space-y-1.5">
+                  {evidencePack.referenceCheckGuide.map((ref, idx) => (
+                    <div key={idx} className="bg-slate-900/40 p-1.5 rounded border border-slate-700/50">
+                      <div className="text-[10px] text-blue-100 font-medium mb-0.5">"{ref.question}"</div>
+                      <div className="text-[9px] text-slate-500 flex items-start gap-1">
+                        <Info size={8} className="mt-0.5 shrink-0" />
+                        <span>Context: {ref.context}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* High-Stakes Questions (North Star) */}
+            {evidencePack.highStakesQuestions && evidencePack.highStakesQuestions.length > 0 ? (
+              <div className="space-y-2 pt-1">
+                <div className="text-[11px] font-semibold text-purple-400 flex items-center gap-1.5">
+                  <Zap size={12} />
+                  High-Stakes Discovery Questions
+                </div>
+                {evidencePack.highStakesQuestions.map((q, idx) => (
+                  <div key={idx} className="group cursor-help relative p-2 bg-purple-900/10 hover:bg-purple-900/20 border border-purple-500/20 rounded transition-colors">
+                    <div className="text-[11px] text-purple-100 font-medium mb-1">
+                      "{q.question}"
+                    </div>
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span className="text-purple-300/70 uppercase tracking-wider">{q.riskArea}</span>
+                      <span className="opacity-0 group-hover:opacity-100 transition-opacity text-purple-300">Hover for signal</span>
+                    </div>
+
+                    {/* Hover Tooltip for Signal */}
+                    <div className="absolute left-0 bottom-full mb-2 w-full p-2 bg-slate-900 border border-slate-600 rounded shadow-xl text-[10px] text-slate-300 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 pointer-events-none">
+                      <span className="font-semibold text-emerald-400 block mb-0.5">Expected Signal:</span>
+                      {q.expectedSignal}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              /* Fallback to old questions if new ones aren't generated yet */
+              <div className="space-y-1 border-t border-slate-700/50 pt-2">
+                <div className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Truth-Check Preview</div>
+                {evidencePack.truthCheckPreviewQuestions?.slice(0, 2).map((q, idx) => (
+                  <div key={`${idx}-${q}`} className="text-[11px] text-slate-400 pl-3 border-l sm:border-l-2 border-slate-700">
+                    {q}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Day 90 Trajectory (Phase 3) */}
+            {evidencePack.day90Trajectory && evidencePack.day90Trajectory.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-slate-700/50">
+                <div className="text-[11px] font-semibold text-emerald-400 mb-2 flex items-center gap-1.5">
+                  <CalendarDays size={12} />
+                  Day 90 Forecast (Regret Prevention)
+                </div>
+                <div className="relative pl-3 space-y-4 before:absolute before:left-[5px] before:top-1 before:bottom-1 before:w-px before:bg-slate-700">
+                  {evidencePack.day90Trajectory.map((step, idx) => (
+                    <div key={idx} className="relative">
+                      <div className={`absolute -left-[16px] top-1.5 w-2 h-2 rounded-full border border-slate-900 ${idx === 0 ? 'bg-emerald-500' : idx === 1 ? 'bg-emerald-400/70' : 'bg-emerald-300/50'
+                        }`}></div>
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="text-[10px] font-bold text-slate-200 uppercase tracking-wider">{step.period}</span>
+                      </div>
+                      <div className="text-[10px] text-emerald-100/90 mb-0.5 font-medium">{step.focus}</div>
+                      <div className="text-[9px] text-amber-400/80 flex items-center gap-1">
+                        <AlertTriangle size={8} /> Risk: {step.potentialRisk}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+          </div>
+        ) : (
+          <p className="text-xs text-gray-400 mb-4 min-h-[2.5rem] leading-relaxed">
+            {matchRationale || 'No analysis data available. Run detailed analysis to inspect fit.'}
+          </p>
+        )}
 
         {/* Skills with highlighting */}
         <div className="mb-4">
@@ -216,16 +389,17 @@ const CandidateCard: React.FC<{
             {candidate.skills.slice(0, 5).map(skill => {
               const isMatch = isMatchingSkill(skill);
               return (
-                <span
+                <button
                   key={skill}
-                  className={`text-[10px] px-2 py-1 rounded border ${
-                    isMatch
-                      ? 'bg-green-500/20 border-green-500/40 text-green-300'
-                      : 'bg-slate-700/50 border-slate-600/50 text-gray-300'
-                  }`}
+                  onClick={(e) => { e.stopPropagation(); setSkillsPassportSkill(skill); }}
+                  className={`text-[10px] px-2 py-1 rounded border transition-all hover:scale-105 hover:shadow-lg ${isMatch
+                    ? 'bg-green-500/20 border-green-500/40 text-green-300 hover:bg-green-500/30'
+                    : 'bg-slate-700/50 border-slate-600/50 text-gray-300 hover:bg-slate-700/80 hover:text-white'
+                    }`}
+                  title="Click to view Skills Passport (Evidence Chain)"
                 >
                   {skill}
-                </span>
+                </button>
               );
             })}
             {candidate.skills.length > 5 && (
@@ -236,6 +410,14 @@ const CandidateCard: React.FC<{
           </div>
         </div>
       </div>
+
+      {
+        skillsPassportSkill && (
+          <div className="absolute z-50 left-0 top-0 w-full h-full bg-slate-900/95 p-4 flex flex-col justify-center shadow-2xl rounded-xl">
+            <SkillsPassport skillName={skillsPassportSkill} onClose={() => setSkillsPassportSkill(null)} />
+          </div>
+        )
+      }
 
       {/* Action Buttons */}
       <div className="mt-auto grid grid-cols-6 gap-2">
@@ -283,7 +465,7 @@ const CandidateCard: React.FC<{
           <ExternalLink className="h-4 w-4" />
         </button>
       </div>
-    </div>
+    </div >
   );
 };
 
@@ -310,11 +492,24 @@ const CandidatePane: React.FC<CandidatePaneProps> = ({ job, onInitiateAnalysis, 
   const [skillsFilter, setSkillsFilter] = useState<string[]>([]);
 
   const [shortlistAnalysisByCandidateId, setShortlistAnalysisByCandidateId] = useState<Record<string, { matchScore: number; matchRationale: string; semanticScore: number }>>({});
+  const [evidencePackByCandidateId, setEvidencePackByCandidateId] = useState<Record<string, EvidencePack>>({});
+  const [roleContextPack, setRoleContextPack] = useState<RoleContextPack | null>(null);
   const [isShortlistAnalyzing, setIsShortlistAnalyzing] = useState(false);
   const [shortlistProgress, setShortlistProgress] = useState({ current: 0, total: 0 });
   const [shortlistError, setShortlistError] = useState<string | null>(null);
 
   const shortlistStorageKey = useMemo(() => (job ? `shortlist_ai_${job.id}` : null), [job]);
+
+  useEffect(() => {
+    if (!job) return;
+    let cancelled = false;
+    jobContextPackService.get(job.id).then((pack) => {
+      if (!cancelled) setRoleContextPack(pack);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [job?.id]);
 
   // Rehydrate shortlist AI results when returning to this page/job.
   useEffect(() => {
@@ -389,6 +584,17 @@ const CandidatePane: React.FC<CandidatePaneProps> = ({ job, onInitiateAnalysis, 
 
           return next;
         });
+
+        setEvidencePackByCandidateId((prev) => {
+          const next = { ...prev };
+          for (const [candidateId, artifact] of latestByCandidateId.entries()) {
+            const maybePack = (artifact.details as any)?.evidencePack;
+            if (maybePack && typeof maybePack === 'object') {
+              next[candidateId] = maybePack as EvidencePack;
+            }
+          }
+          return next;
+        });
       } catch (e) {
         if (import.meta.env.DEV) console.warn('[CandidatePane] Failed to hydrate shortlist artifacts:', e);
       }
@@ -405,7 +611,9 @@ const CandidatePane: React.FC<CandidatePaneProps> = ({ job, onInitiateAnalysis, 
     try {
       const payload: Record<string, { matchScore: number; matchRationale: string; semanticScore: number; analyzedAt: string }> = {};
       Object.entries(shortlistAnalysisByCandidateId).forEach(([candidateId, value]) => {
-        payload[candidateId] = { ...value, analyzedAt: new Date().toISOString() };
+        if (value) {
+          payload[candidateId] = { ...value, analyzedAt: new Date().toISOString() };
+        }
       });
       localStorage.setItem(shortlistStorageKey, JSON.stringify({ data: payload, updatedAt: Date.now() }));
     } catch (e) {
@@ -518,6 +726,12 @@ const CandidatePane: React.FC<CandidatePaneProps> = ({ job, onInitiateAnalysis, 
         const decision = fitAnalysisService.decisionFromScore(matchScore) as any;
         const externalId = fitAnalysisService.getExternalIdForJob(job, 'ui');
 
+        const evidencePack = await evidencePackService.build({
+          job: toJobSnapshot(job),
+          candidate: toCandidateSnapshot(candidate),
+          contextPack: roleContextPack
+        });
+
         void decisionArtifactService.saveShortlistAnalysis({
           candidateId: String(candidate.id),
           candidateName: candidate.name,
@@ -530,7 +744,8 @@ const CandidatePane: React.FC<CandidatePaneProps> = ({ job, onInitiateAnalysis, 
             semanticScore,
             method: fit.method,
             confidence: fit.confidence,
-            reasons: fit.reasons ?? []
+            reasons: fit.reasons ?? [],
+            evidencePack
           },
           externalId
         });
@@ -551,6 +766,7 @@ const CandidatePane: React.FC<CandidatePaneProps> = ({ job, onInitiateAnalysis, 
           ...prev,
           [candidate.id]: { matchScore, matchRationale, semanticScore }
         }));
+        setEvidencePackByCandidateId((prev) => ({ ...prev, [candidate.id]: evidencePack }));
       } catch (e) {
         console.error('[CandidatePane] Shortlist analysis failed:', e);
         const message = e instanceof Error ? e.message : 'Shortlist analysis failed.';
@@ -564,7 +780,7 @@ const CandidatePane: React.FC<CandidatePaneProps> = ({ job, onInitiateAnalysis, 
 
     setIsShortlistAnalyzing(false);
     setShortlistProgress({ current: 0, total: 0 });
-  }, [job, transformedSupabaseCandidates, supabaseCandidates]);
+  }, [job, transformedSupabaseCandidates, supabaseCandidates, roleContextPack]);
 
   if (!job) {
     return (
@@ -764,6 +980,7 @@ const CandidatePane: React.FC<CandidatePaneProps> = ({ job, onInitiateAnalysis, 
                     key={candidate.id}
                     candidate={candidate}
                     job={job}
+                    evidencePack={evidencePackByCandidateId[candidate.id]}
                     onSelect={(c) => {
                       if (onOpenCandidateJobDrawer) {
                         onOpenCandidateJobDrawer(c, job);
