@@ -1,3 +1,4 @@
+import { Type } from '@google/genai';
 import { aiService } from './AIService';
 
 export interface ExtractedJobRequirements {
@@ -84,6 +85,22 @@ Return JSON:
 }
 `;
 
+    // Layer 6: Enforce structured output schema at the API level.
+    const jobReqSchema = {
+      type: Type.OBJECT,
+      properties: {
+        suggestedTitle: { type: Type.STRING, description: 'Cleaned professional job title.' },
+        mustHaveSkills: { type: Type.ARRAY, items: { type: Type.STRING }, description: '3-7 critical skills.' },
+        niceToHaveSkills: { type: Type.ARRAY, items: { type: Type.STRING }, description: '2-5 beneficial skills.' },
+        experienceLevel: { type: Type.STRING, description: 'One of: entry, junior, mid-level, senior, lead, principal.' },
+        keyResponsibilities: { type: Type.ARRAY, items: { type: Type.STRING }, description: '3-5 key responsibilities.' },
+        suggestedDepartment: { type: Type.STRING, description: 'Suggested department.' },
+        suggestedLocation: { type: Type.STRING, description: 'Suggested location.' },
+        cleanedDescription: { type: Type.STRING, description: 'Professional, well-formatted job description.' }
+      },
+      required: ['suggestedTitle', 'mustHaveSkills', 'niceToHaveSkills', 'experienceLevel', 'keyResponsibilities', 'suggestedDepartment', 'suggestedLocation', 'cleanedDescription']
+    };
+
     const res = await aiService.generateJson<{
       suggestedTitle: string;
       mustHaveSkills: string[];
@@ -93,7 +110,7 @@ Return JSON:
       suggestedDepartment: string;
       suggestedLocation: string;
       cleanedDescription: string;
-    }>(prompt);
+    }>(prompt, jobReqSchema);
 
     if (!res.success || !res.data) return fallback;
 

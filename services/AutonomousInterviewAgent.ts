@@ -9,6 +9,7 @@
  * - debrief generation (Gemini if configured; otherwise a mock summary)
  */
 
+import { Type } from '@google/genai';
 import type { Candidate, Job } from '../types';
 import { backgroundJobService } from './BackgroundJobService';
 import { pulseService } from './PulseService';
@@ -380,7 +381,20 @@ Return JSON with:
 }
 Return ONLY valid JSON.`;
 
-        const response = await aiService.generateJson<InterviewDebrief>(prompt);
+        // Layer 6: Enforce structured output schema at the API level.
+        const debriefSchema = {
+            type: Type.OBJECT,
+            properties: {
+                summary: { type: Type.STRING, description: 'Concise interview summary.' },
+                strengths: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'Key strengths observed.' },
+                concerns: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'Concerns or red flags.' },
+                recommendedNextSteps: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'Recommended next steps.' },
+                suggestedFollowUps: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'Follow-up questions.' }
+            },
+            required: ['summary', 'strengths', 'concerns', 'recommendedNextSteps', 'suggestedFollowUps']
+        };
+
+        const response = await aiService.generateJson<InterviewDebrief>(prompt, debriefSchema);
         if (response.success && response.data) return response.data;
 
         return {

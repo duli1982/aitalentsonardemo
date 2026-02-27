@@ -1,3 +1,4 @@
+import { Type } from '@google/genai';
 import type { Candidate } from '../types';
 import { aiService } from './AIService';
 
@@ -56,11 +57,22 @@ Return JSON:
 }
 `;
 
+    // Layer 6: Enforce structured output schema at the API level.
+    const enrichmentSchema = {
+      type: Type.OBJECT,
+      properties: {
+        suggestedRoleTitle: { type: Type.STRING, description: 'Inferred role title for the candidate.' },
+        experienceSummary: { type: Type.STRING, description: '2-3 sentence professional experience summary.' },
+        inferredSkills: { type: Type.ARRAY, items: { type: Type.STRING }, description: '3-6 inferred skills.' }
+      },
+      required: ['suggestedRoleTitle', 'experienceSummary', 'inferredSkills']
+    };
+
     const res = await aiService.generateJson<{
       suggestedRoleTitle: string;
       experienceSummary: string;
       inferredSkills: string[];
-    }>(prompt);
+    }>(prompt, enrichmentSchema);
 
     if (!res.success || !res.data) return fallback;
 

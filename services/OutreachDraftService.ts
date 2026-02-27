@@ -1,5 +1,9 @@
+import { Type } from '@google/genai';
 import type { CandidateSnapshot, EvidencePack, JobSnapshot, RoleContextPack } from '../types';
 import { aiService } from './AIService';
+import { sanitizeForPrompt, sanitizeShort, buildSecurePrompt } from '../utils/promptSecurity';
+import { validateGenericOutput } from '../utils/outputValidation';
+import { agenticTools } from './AgenticSearchTools';
 
 export interface OutreachDraft {
   subject: string;
@@ -49,35 +53,75 @@ class OutreachDraftService {
     if (!aiService.isAvailable()) return fallback;
 
     const { job, candidate, evidencePack, contextPack } = params;
+
+    // Step 1: Agentic Performance Lookup
+    let performanceContext = "No past performance data available.";
+    try {
+      const perfRes = await agenticTools.outreach.execute({
+        skills: candidate.skills || [],
+        role: candidate.role
+      });
+      if (perfRes.success) {
+        const insight = perfRes.data.metadata?.insight || '';
+        const examples = perfRes.data.results.map((r: any) => `"${r.subject}"`).join(', ');
+        performanceContext = `Insight: ${insight}\nSuccessful Subject Lines for this profile: ${examples}`;
+      }
+    } catch (e) {
+      console.warn('Outreach performance lookup failed', e);
+    }
+
     const evidenceText = evidencePack ? safeText(JSON.stringify(evidencePack), 1400) : 'N/A';
     const contextText = contextPack?.answers ? safeText(JSON.stringify(contextPack.answers), 900) : 'N/A';
 
-    const prompt = `
-You are Talent Sonar. Write a short, high-signal recruiting outreach message.
-
+    const prompt = buildSecurePrompt({
+      system: `You are Talent Sonar. Write a short, high-signal recruiting outreach message.
 Rules:
-- Do NOT say “I came across your profile.”
+- Do NOT say "I came across your profile."
 - Ground the message in the evidence pack (specific receipts).
 - Keep it under 120 words.
 - Ask one concrete question.
-- Return ONLY JSON: { "subject": string, "body": string }.
+- Return ONLY JSON: { "subject": string, "body": string }.`,
+      dataBlocks: [
+        {
+          label: 'JOB',
+          content: `Title: ${sanitizeShort(job.title)}\nLocation: ${sanitizeShort(job.location)}`
+        },
+        {
+          label: 'CANDIDATE',
+          content: `Name: ${sanitizeShort(candidate.name)}\nEmail: ${sanitizeShort(candidate.email || '', 120)}`
+        },
+        {
+          label: 'EVIDENCE_PACK',
+          content: sanitizeForPrompt(evidenceText, 1400)
+        },
+        {
+          label: 'PERFORMANCE_INSIGHTS',
+          content: performanceContext
+        },
+        {
+          label: 'ROLE_CONTEXT',
+          content: sanitizeForPrompt(contextText, 900) || 'N/A'
+        }
+      ],
+      outputSpec: 'Return ONLY valid JSON: { "subject": string, "body": string }.'
+    });
 
-Job:
-- Title: ${job.title}
-- Location: ${job.location}
+    // Layer 6: Enforce structured output schema at the API level.
+    const outreachSchema = {
+      type: Type.OBJECT,
+      properties: {
+        subject: { type: Type.STRING, description: 'Email subject line.' },
+        body: { type: Type.STRING, description: 'Email body text.' }
+      },
+      required: ['subject', 'body']
+    };
 
-Role context pack (optional): ${contextText}
-
-Candidate:
-- Name: ${candidate.name}
-- Email: ${candidate.email || ''}
-
-Evidence pack:
-${evidenceText}
-`;
-
-    const res = await aiService.generateJson<{ subject: string; body: string }>(prompt);
+    const res = await aiService.generateJson<{ subject: string; body: string }>(prompt, outreachSchema);
     if (!res.success || !res.data) return fallback;
+
+    // Layer 5: Validate AI output for prompt leakage and injection artifacts.
+    const outputValidation = validateGenericOutput(res.data);
+    if (!outputValidation.valid) return fallback;
 
     const subject = safeText(res.data.subject, 120) || fallback.subject;
     const body = safeText(res.data.body, 1200) || fallback.body;

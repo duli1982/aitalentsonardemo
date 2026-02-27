@@ -1,8 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import type { Job } from '../types';
-import { ChevronDown, Loader2, PanelRightOpen, Sparkles } from 'lucide-react';
+import { ChevronDown, Loader2, PanelRightOpen, Sparkles, Phone } from 'lucide-react';
 import Skeleton from './ui/Skeleton';
 import JobDetailsDrawer from './modals/JobDetailsDrawer';
+import IntakeCallModal from './modals/IntakeCallModal';
+import IntakeScorecardReviewModal from './modals/IntakeScorecardReviewModal';
 
 interface JobDetailsProps {
     job: Job;
@@ -15,6 +17,8 @@ interface JobDetailsProps {
 const JobDetails: React.FC<JobDetailsProps> = ({ job, onAnalyze, isAnalyzing, onUpdateStatus, isLoading }) => {
     const [detailsOpen, setDetailsOpen] = useState(false);
     const [descriptionExpanded, setDescriptionExpanded] = useState(false);
+    const [intakeCallOpen, setIntakeCallOpen] = useState(false);
+    const [scorecardReviewOpen, setScorecardReviewOpen] = useState(false);
 
     const hasDescription = useMemo(() => Boolean(job.description && job.description.trim().length), [job.description]);
     const showExcerptToggle = useMemo(() => Boolean(job.description && job.description.trim().length > 160), [job.description]);
@@ -94,6 +98,14 @@ const JobDetails: React.FC<JobDetailsProps> = ({ job, onAnalyze, isAnalyzing, on
                     <div className="flex items-center space-x-2 flex-shrink-0 mt-1">
                         <button
                             type="button"
+                            onClick={() => setIntakeCallOpen(true)}
+                            className="bg-green-700/30 hover:bg-green-600/40 text-green-300 font-medium py-2 px-3 rounded-md flex items-center transition-colors text-sm border border-green-600/30"
+                        >
+                            <Phone className="h-4 w-4 mr-1.5" />
+                            Intake Call
+                        </button>
+                        <button
+                            type="button"
                             onClick={() => setDetailsOpen(true)}
                             className="bg-slate-700 hover:bg-slate-600 text-slate-200 font-medium py-2 px-3 rounded-md flex items-center transition-colors text-sm"
                         >
@@ -109,6 +121,23 @@ const JobDetails: React.FC<JobDetailsProps> = ({ job, onAnalyze, isAnalyzing, on
             </div>
 
             <JobDetailsDrawer isOpen={detailsOpen} job={job} onClose={() => setDetailsOpen(false)} />
+
+            <IntakeCallModal
+                isOpen={intakeCallOpen}
+                onClose={() => setIntakeCallOpen(false)}
+                job={job}
+                onScorecardReady={() => {
+                    setIntakeCallOpen(false);
+                    setScorecardReviewOpen(true);
+                }}
+            />
+
+            <IntakeScorecardReviewModal
+                isOpen={scorecardReviewOpen}
+                onClose={() => setScorecardReviewOpen(false)}
+                jobId={job.id}
+                jobTitle={job.title}
+            />
         </div>
     );
 };

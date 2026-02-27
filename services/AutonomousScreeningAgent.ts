@@ -19,6 +19,7 @@ import { evidencePackService } from './EvidencePackService';
 import { outreachDraftService } from './OutreachDraftService';
 import { truthCheckService, detectGenericAnswer, type TruthCheckQuestion } from './TruthCheckService';
 import { toCandidateSnapshot, toJobSnapshot } from '../utils/snapshots';
+import { agenticTools } from './AgenticSearchTools';
 
 export interface ScreeningCandidate {
     candidateId: string;
@@ -497,10 +498,14 @@ class AutonomousScreeningAgent {
 
         // Generate truth-check questions (role-tailored) with rubric.
         const truthCheck = await truthCheckService.build({ job: effectiveJob, candidate: effectiveCandidate, contextPack });
-        const questions = truthCheck.questions.map((q) => q.question);
+        // Agentic: Mix of Truth-Check + Success Cloning questions
+        const screeningQuestions = await this.generateQuestions(effectiveJob.requiredSkills || [], effectiveJob.title);
+
+        // Combine them (prioritizing truth check, then agentic/screening)
+        const combinedQuestions = [...truthCheck.questions.map(q => q.question), ...screeningQuestions].slice(0, 5); // Limit to 5 for efficiency
 
         // Simulate candidate responses (in real app: send email/SMS or conduct chat)
-        const qaResults = await this.simulateTruthCheckScreening(truthCheck.questions, candidate);
+        const qaResults = await this.simulateScreening(combinedQuestions, candidate);
 
         // Calculate overall score
         const avgScore = qaResults.reduce((sum, qa) => sum + qa.score, 0) / qaResults.length;
@@ -538,22 +543,67 @@ class AutonomousScreeningAgent {
     }
 
     /**
-     * Generate screening questions from job requirements
+     * Generate screening questions from job requirements + Agentic Success Cloning
      */
-    private generateQuestions(requirements: string[]): string[] {
+    private async generateQuestions(requirements: string[], jobTitle: string): Promise<string[]> {
         const questions: string[] = [];
 
-        // Add requirement-specific questions
+        // 1. Success Cloning (Agentic)
+        try {
+            const agenticQs = await this.generateAgenticQuestions(jobTitle);
+            questions.push(...agenticQs);
+        } catch (e) {
+            console.warn('[AutonomousScreeningAgent] Failed to generate agentic questions', e);
+        }
+
+        // 2. Baseline Requirements
         requirements.slice(0, 3).forEach(req => {
             questions.push(`Tell me about your experience with ${req}.`);
         });
 
-        // Add general questions
-        questions.push('Why are you interested in this role?');
+        // 3. General
+        if (questions.length < 5) {
+            questions.push('Why are you interested in this role?');
+        }
         questions.push('What are your salary expectations?');
         questions.push('When would you be available to start?');
 
         return questions;
+    }
+
+    /**
+     * Agentic: Find successful peers and ask about their top skills
+     */
+    private async generateAgenticQuestions(jobTitle: string): Promise<string[]> {
+        // Search for "internal" or "successful" candidates with similar title
+        // We use the vector tool to find semantically similar successful profiles
+        const res = await agenticTools.vector.execute({
+            query: `successful ${jobTitle}`,
+            limit: 3
+        });
+
+        if (!res.success || res.data.results.length === 0) {
+            return [];
+        }
+
+        // Extract top skills from these peers
+        const peers = res.data.results;
+        const skillCounts = new Map<string, number>();
+        peers.forEach((p: any) => {
+            if (Array.isArray(p.skills)) {
+                p.skills.forEach((s: string) => skillCounts.set(s, (skillCounts.get(s) || 0) + 1));
+            }
+        });
+
+        // Sort by frequency
+        const topSkills = Array.from(skillCounts.entries())
+            .sort((a, b) => b[1] - a[1])
+            .map(e => e[0])
+            .slice(0, 2);
+
+        return topSkills.map(skill =>
+            `Our top ${jobTitle}s often rely on ${skill}. Can you share a specific challenge where you used ${skill} to drive impact?`
+        );
     }
 
     /**

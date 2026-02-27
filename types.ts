@@ -126,6 +126,7 @@ export interface Job {
     roleContextNotes?: string;
     [key: string]: unknown;
   };
+  intakeScorecardId?: string;
 }
 
 // --- Normalized snapshots for agents + UI boundaries ---
@@ -314,6 +315,69 @@ export type AppView =
   | 'mobility'
   | 'governance'
   | 'war-room';
+
+// --- Intake Call Types ---
+export type IntakeCallStatus = 'live' | 'processing' | 'draft_ready' | 'approved';
+export type IntakeScorecardStatus = 'draft' | 'approved' | 'revised';
+export type IntakeCriterionCategory = 'technical' | 'experience' | 'soft_skill' | 'cultural' | 'other';
+
+export interface IntakeParticipant {
+  name: string;
+  role: 'hiring_manager' | 'recruiter' | 'talent_advisor' | 'other';
+  email?: string;
+}
+
+export interface IntakeTranscriptLine {
+  id: string;
+  timestamp: Date;
+  speaker: string; // participant name
+  speakerRole: IntakeParticipant['role'];
+  text: string;
+}
+
+export interface IntakeCallSession {
+  id: string;
+  jobId: string;
+  jobTitle?: string;
+  participants: IntakeParticipant[];
+  transcript: IntakeTranscriptLine[];
+  rawTranscript?: string;
+  status: IntakeCallStatus;
+  startedAt: string; // ISO
+  endedAt?: string;  // ISO
+}
+
+export interface IntakeScorecardCriterion {
+  criterion: string;
+  weight: number; // 1-5
+  category: IntakeCriterionCategory;
+  evidenceFromCall: string; // quote or paraphrase from transcript
+}
+
+export interface IntakeScorecard {
+  id: string;
+  sessionId: string;
+  jobId: string;
+  summary: string;
+  mustHave: IntakeScorecardCriterion[];
+  niceToHave: IntakeScorecardCriterion[];
+  idealProfile: string;
+  redFlags: string[];
+  roleContext: {
+    teamSize?: string;
+    reportingTo?: string;
+    growthPath?: string;
+    urgency?: string;
+    budgetRange?: string;
+    workModel?: string; // remote / hybrid / onsite
+    [key: string]: unknown;
+  };
+  status: IntakeScorecardStatus;
+  approvedBy?: string;
+  approvedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export interface DepartmentInsight {
   department: string;

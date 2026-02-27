@@ -1,5 +1,8 @@
+import { Type } from '@google/genai';
 import type { Candidate, Job } from '../types';
 import { aiService } from './AIService';
+import { sanitizeForPrompt, sanitizeArray, sanitizeShort, buildSecurePrompt } from '../utils/promptSecurity';
+import { validateFitScore } from '../utils/outputValidation';
 
 export type FitMethod = 'ai' | 'heuristic';
 
@@ -94,26 +97,32 @@ class FitAnalysisService {
 
     if (!aiService.isAvailable()) return fallback;
 
-    const prompt = `
-You are an expert recruiter. Score candidate fit for the job on a 0-100 scale.
-
-Job:
-- Title: ${job.title}
-- Department: ${job.department}
-- Location: ${job.location}
-- Required skills: ${(job.requiredSkills || []).join(', ')}
-- Description: ${(job.description || '').slice(0, 1200)}
-
-Candidate:
-- Name: ${candidate.name}
-- Current role: ${candidate.role || ''}
-- Location: ${candidate.location || ''}
-- Experience (years): ${getCandidateExperience(candidate)}
-- Skills: ${(candidate.skills || []).join(', ')}
-- Summary: ${getCandidateSummary(candidate)}
-
-Optional signal:
-- Semantic match score (0-100): ${typeof semanticScore === 'number' ? semanticScore : 'N/A'}
+    const prompt = buildSecurePrompt({
+      system: 'You are an expert recruiter. Score candidate fit for the job on a 0-100 scale based ONLY on factual skill overlap, experience, and role alignment.',
+      dataBlocks: [
+        {
+          label: 'JOB',
+          content: [
+            `Title: ${sanitizeShort(job.title)}`,
+            `Department: ${sanitizeShort(job.department)}`,
+            `Location: ${sanitizeShort(job.location)}`,
+            `Required skills: ${sanitizeArray(job.requiredSkills || []).join(', ')}`,
+            `Description: ${sanitizeForPrompt((job.description || '').slice(0, 1200), 1200)}`
+          ].join('\n')
+        },
+        {
+          label: 'CANDIDATE',
+          content: [
+            `Name: ${sanitizeShort(candidate.name)}`,
+            `Current role: ${sanitizeShort(candidate.role || '')}`,
+            `Location: ${sanitizeShort(candidate.location || '')}`,
+            `Experience (years): ${getCandidateExperience(candidate)}`,
+            `Skills: ${sanitizeArray(candidate.skills || []).join(', ')}`,
+            `Summary: ${sanitizeForPrompt(getCandidateSummary(candidate), 800)}`
+          ].join('\n')
+        }
+      ],
+      outputSpec: `Optional signal — Semantic match score (0-100): ${typeof semanticScore === 'number' ? semanticScore : 'N/A'}
 
 Return ONLY valid JSON:
 {
@@ -121,24 +130,47 @@ Return ONLY valid JSON:
   "rationale": string,
   "confidence": number,
   "reasons": string[]
-}
-`;
+}`
+    });
+
+    // Layer 6: Enforce structured output schema at the API level.
+    const fitSchema = {
+      type: Type.OBJECT,
+      properties: {
+        score: { type: Type.NUMBER, description: 'Fit score from 0 to 100.' },
+        rationale: { type: Type.STRING, description: 'Explanation of the score.' },
+        confidence: { type: Type.NUMBER, description: 'Confidence level from 0 to 1.' },
+        reasons: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'Key reasons supporting the score.' }
+      },
+      required: ['score', 'rationale', 'confidence', 'reasons']
+    };
 
     const ai = await aiService.generateJson<{
       score: number;
       rationale: string;
       confidence?: number;
       reasons?: string[];
-    }>(prompt);
+    }>(prompt, fitSchema);
 
     if (!ai.success || !ai.data) {
       return fallback;
     }
 
-    const score = clamp(Math.round(Number(ai.data.score ?? fallback.score)), 0, 100);
-    const confidence = clamp(Number(ai.data.confidence ?? 0.7), 0, 1);
-    const rationale = String(ai.data.rationale || fallback.rationale || '').trim() || fallback.rationale;
-    const reasons = Array.isArray(ai.data.reasons) ? ai.data.reasons.map((r) => String(r)).filter(Boolean) : fallback.reasons;
+    // Layer 5: Validate AI output — clamp scores, detect leakage, flag anomalies.
+    const validated = validateFitScore({
+      score: ai.data.score ?? fallback.score,
+      confidence: ai.data.confidence ?? 0.7,
+      rationale: ai.data.rationale || fallback.rationale,
+      reasons: ai.data.reasons
+    });
+
+    // If validation found critical issues, fall back to deterministic scoring.
+    if (!validated.validation.valid) return fallback;
+
+    const score = clamp(Math.round(validated.score), 0, 100);
+    const confidence = validated.confidence;
+    const rationale = validated.rationale || fallback.rationale;
+    const reasons = validated.reasons.length > 0 ? validated.reasons : fallback.reasons;
 
     return { score, confidence, rationale, method: 'ai', reasons };
   }

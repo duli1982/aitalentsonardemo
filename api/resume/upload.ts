@@ -13,6 +13,10 @@ type UploadResponse =
       parseStatus: 'PARSED' | 'PENDING_PARSE';
       retryAfterMs?: number;
       extracted: { bytes: number; sha256: string };
+      /** Layer 3: Present when injection patterns were detected in the uploaded file. */
+      injectionWarning?: { flagged: boolean; riskScore: number; flags: Array<{ code: string; severity: string; reason: string }> };
+      /** Layer 4: Present when hidden text techniques were detected in the uploaded file. */
+      hiddenTextWarning?: { flagged: boolean; totalIndicators: number; flags: Array<{ technique: string; severity: string; description: string }> };
     }
   | { ok: false; errorCode: string; message: string; retryAfterMs?: number };
 
@@ -81,6 +85,30 @@ export default async function handler(req: any, res: any) {
 
     const candidateId = String(candidateRow.id);
 
+    // Layer 3: Build injection warning payload for metadata + response.
+    const injectionScan = extracted.injectionScan;
+    const injectionWarning = injectionScan?.flagged
+      ? {
+          flagged: true,
+          riskScore: injectionScan.riskScore,
+          flags: injectionScan.flags
+            .filter((f) => f.severity !== 'low')
+            .map((f) => ({ code: f.code, severity: f.severity, reason: f.reason })),
+        }
+      : undefined;
+
+    // Layer 4: Build hidden text warning payload for metadata + response.
+    const hiddenScan = extracted.hiddenTextScan;
+    const hiddenTextWarning = hiddenScan?.flagged
+      ? {
+          flagged: true,
+          totalIndicators: hiddenScan.totalIndicators,
+          flags: hiddenScan.flags
+            .filter((f) => f.severity !== 'low')
+            .map((f) => ({ technique: f.technique, severity: f.severity, description: f.description })),
+        }
+      : undefined;
+
     const { data: docRow, error: docErr } = await supabase
       .from('candidate_documents')
       .insert({
@@ -95,6 +123,10 @@ export default async function handler(req: any, res: any) {
           bytes: extracted.bytes,
           status: 'pending_review',
           parsed_resume: null,
+          // Layer 3: Store injection scan result for audit trail.
+          ...(injectionWarning ? { injectionWarning } : {}),
+          // Layer 4: Store hidden text scan result for audit trail.
+          ...(hiddenTextWarning ? { hiddenTextWarning } : {}),
         },
       })
       .select('id')
@@ -116,6 +148,8 @@ export default async function handler(req: any, res: any) {
         parseStatus: 'PENDING_PARSE',
         retryAfterMs,
         extracted: { bytes: extracted.bytes, sha256: extracted.sha256 },
+        injectionWarning,
+        hiddenTextWarning,
       });
     }
 
@@ -148,6 +182,8 @@ export default async function handler(req: any, res: any) {
               status: 'pending_review',
               parsed_resume: parsedResume,
               attached_to_existing_candidate: true,
+              ...(injectionWarning ? { injectionWarning } : {}),
+              ...(hiddenTextWarning ? { hiddenTextWarning } : {}),
             },
             updated_at: new Date().toISOString(),
           })
@@ -162,6 +198,8 @@ export default async function handler(req: any, res: any) {
           parsedResume,
           parseStatus: 'PARSED',
           extracted: { bytes: extracted.bytes, sha256: extracted.sha256 },
+          injectionWarning,
+          hiddenTextWarning,
         });
       }
     }
@@ -187,6 +225,8 @@ export default async function handler(req: any, res: any) {
           bytes: extracted.bytes,
           status: 'pending_review',
           parsed_resume: parsedResume,
+          ...(injectionWarning ? { injectionWarning } : {}),
+          ...(hiddenTextWarning ? { hiddenTextWarning } : {}),
         },
         updated_at: new Date().toISOString(),
       })
@@ -199,6 +239,8 @@ export default async function handler(req: any, res: any) {
       parsedResume,
       parseStatus: 'PARSED',
       extracted: { bytes: extracted.bytes, sha256: extracted.sha256 },
+      injectionWarning,
+      hiddenTextWarning,
     });
   } catch (error: any) {
     return send(res, 500, { ok: false, errorCode: 'UPSTREAM', message: String(error?.message || error) });

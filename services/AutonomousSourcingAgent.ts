@@ -5,6 +5,7 @@
  */
 
 import { semanticSearchService } from './SemanticSearchService';
+import { agenticSourcingPrototype } from './AgenticSourcingPrototype';
 import { backgroundJobService } from './BackgroundJobService';
 import { pulseService } from './PulseService';
 import { eventBus, EVENTS } from '../utils/EventBus';
@@ -16,8 +17,9 @@ import type { AgentMode } from './AgentSettingsService';
 import { proposedActionService } from './ProposedActionService';
 import { jobContextPackService } from './JobContextPackService';
 import { evidencePackService } from './EvidencePackService';
-import type { Candidate } from '../types';
+import type { Candidate, IntakeScorecard } from '../types';
 import { toCandidateSnapshot, toJobSnapshot } from '../utils/snapshots';
+import { intakeCallPersistenceService } from './IntakeCallPersistenceService';
 
 const AI_PROMOTE_TO_LONG_LIST_THRESHOLD = 75;
 const SOURCING_SEMANTIC_THRESHOLD = 0.65;
@@ -99,18 +101,49 @@ class AutonomousSourcingAgent {
         for (const job of openJobs) {
             try {
                 const contextPack = await jobContextPackService.get(String(job.id));
+
+                // Check for an approved intake scorecard — its criteria take priority
+                const intakeScorecard = await intakeCallPersistenceService.getApprovedScorecardForJob(String(job.id));
+                if (intakeScorecard) {
+                    console.log(`[AutonomousSourcingAgent] Using intake scorecard criteria for "${job.title}"`);
+                    // Enrich job skills from intake scorecard must-haves if not already present
+                    const intakeSkills = intakeScorecard.mustHave
+                        .filter((c) => c.category === 'technical')
+                        .map((c) => c.criterion);
+                    const existingSkills = new Set((job.requiredSkills || []).map((s: string) => s.toLowerCase()));
+                    for (const skill of intakeSkills) {
+                        if (!existingSkills.has(skill.toLowerCase())) {
+                            job.requiredSkills = [...(job.requiredSkills || []), skill];
+                        }
+                    }
+                }
+
                 // Build search query from job requirements
                 const searchQuery = this.buildSearchQuery(job);
 
                 // Search the vector database
+                // Search using Agentic Prototype (Multi-step reasoning)
                 const searchResult = await this.retryTransient(() =>
-                    semanticSearchService.search(searchQuery, {
-                        threshold: SOURCING_SEMANTIC_THRESHOLD,
-                        limit: SOURCING_CANDIDATE_LIMIT
-                    })
+                    agenticSourcingPrototype.findCandidatesForJob(job)
                 );
 
-                const candidates = searchResult.success ? searchResult.data : searchResult.data ?? [];
+                // Map Agentic results to the format expected by the rest of the method
+                const candidates = searchResult.success
+                    ? searchResult.data.map(r => ({
+                        id: r.candidateId,
+                        name: r.candidateName,
+                        skills: r.candidateSkills,
+                        similarity: r.score / 100, // Normalize back to 0-1 for compatibility
+                        metadata: {
+                            ...(r.fullCandidate?.metadata || {}),
+                            agentReasoning: r.reasoning.join('; ')
+                        },
+                        // Ensure we carry over other fields like email/type/location if available from fullCandidate
+                        email: r.fullCandidate?.email,
+                        type: r.fullCandidate?.type || 'uploaded',
+                        location: r.fullCandidate?.location || r.fullCandidate?.metadata?.location
+                    }))
+                    : [];
 
                 if (!searchResult.success) {
                     pulseService.addEvent({
@@ -179,27 +212,27 @@ class AutonomousSourcingAgent {
                         // We include a lightweight candidate payload so the app can import it into local state if needed.
                         if (this.mode === 'auto_write') {
                             eventBus.emit(EVENTS.CANDIDATE_STAGED, {
-                            candidateId: candidate.id,
-                            candidateName: candidate.name,
-                            jobId: job.id,
-                            stage: 'sourced',
-                            source: 'sourcing-agent',
-                            matchScore: semanticScore,
-                            candidate: {
-                                id: candidate.id,
-                                type: 'uploaded',
-                                name: candidate.name,
-                                role: candidate.metadata?.role || candidate.metadata?.title || 'Candidate',
-                                skills: candidate.skills || [],
-                                experience: candidate.metadata?.experience ?? candidate.metadata?.experienceYears ?? 0,
-                                location: candidate.metadata?.location || candidate.metadata?.city || '',
-                                availability: candidate.metadata?.availability || 'Unknown',
-                                email: candidate.email,
-                                source: candidate.type,
-                                matchScores: { [job.id]: semanticScore },
-                                matchRationales: { [job.id]: `Semantic match ${semanticScore}% — sourced by Autonomous Sourcing Agent. Running AI shortlist...` },
-                                matchRationale: `Semantic match ${semanticScore}% — sourced by Autonomous Sourcing Agent.`
-                            }
+                                candidateId: candidate.id,
+                                candidateName: candidate.name,
+                                jobId: job.id,
+                                stage: 'sourced',
+                                source: 'sourcing-agent',
+                                matchScore: semanticScore,
+                                candidate: {
+                                    id: candidate.id,
+                                    type: 'uploaded',
+                                    name: candidate.name,
+                                    role: candidate.metadata?.role || candidate.metadata?.title || 'Candidate',
+                                    skills: candidate.skills || [],
+                                    experience: candidate.metadata?.experience ?? candidate.metadata?.experienceYears ?? 0,
+                                    location: candidate.metadata?.location || candidate.metadata?.city || '',
+                                    availability: candidate.metadata?.availability || 'Unknown',
+                                    email: candidate.email,
+                                    source: candidate.type,
+                                    matchScores: { [job.id]: semanticScore },
+                                    matchRationales: { [job.id]: `Semantic match ${semanticScore}% — sourced by Autonomous Sourcing Agent. Running AI shortlist...` },
+                                    matchRationale: `Semantic match ${semanticScore}% — sourced by Autonomous Sourcing Agent.`
+                                }
                             });
                         } else {
                             const proposalCandidate = {
@@ -349,54 +382,54 @@ class AutonomousSourcingAgent {
                                 : `AI shortlist score ${aiScore}/100 (< ${AI_PROMOTE_TO_LONG_LIST_THRESHOLD}). Moved to New for recruiter review. ${aiRationale}`;
 
                             if (this.mode === 'auto_write') {
-                            eventBus.emit(EVENTS.CANDIDATE_UPDATED, {
-                                candidateId: candidate.id,
-                                updates: {
-                                    matchScores: { [job.id]: aiScore },
-                                    matchRationales: { [job.id]: note }
-                                }
-                            });
-
-                            eventBus.emit(EVENTS.CANDIDATE_STAGED, {
-                                candidateId: candidate.id,
-                                candidateName: candidate.name,
-                                jobId: job.id,
-                                stage: targetStage,
-                                source: 'sourcing-agent',
-                                score: aiScore
-                            });
-
-                            pulseService.addEvent({
-                                type: 'AGENT_ACTION',
-                                message: shouldPromote
-                                    ? `✅ ${candidate.name} auto-promoted to Long List (${aiScore}/100 AI score) for "${job.title}".`
-                                    : `📝 ${candidate.name} moved to New for recruiter review (${aiScore}/100 AI score) for "${job.title}".`,
-                                severity: shouldPromote ? 'success' : 'info',
-                                metadata: {
+                                eventBus.emit(EVENTS.CANDIDATE_UPDATED, {
                                     candidateId: candidate.id,
-                                    jobId: job.id,
-                                    aiScore,
-                                    semanticScore,
-                                    targetStage,
-                                    agentType: 'SOURCING'
-                                }
-                            });
+                                    updates: {
+                                        matchScores: { [job.id]: aiScore },
+                                        matchRationales: { [job.id]: note }
+                                    }
+                                });
 
-                            void pipelineEventService.logEvent({
-                                candidateId: candidate.id,
-                                candidateName: candidate.name,
-                                jobId: job.id,
-                                jobTitle: job.title,
-                                eventType: 'STAGE_MOVED',
-                                actorType: 'agent',
-                                actorId: 'sourcing-agent',
-                                fromStage: 'sourced',
-                                toStage: targetStage,
-                                summary: shouldPromote
-                                    ? `Auto-promoted to Long List (AI ${aiScore}/100).`
-                                    : `Moved to New for recruiter review (AI ${aiScore}/100).`,
-                                metadata: { aiScore, semanticScore, decision }
-                            });
+                                eventBus.emit(EVENTS.CANDIDATE_STAGED, {
+                                    candidateId: candidate.id,
+                                    candidateName: candidate.name,
+                                    jobId: job.id,
+                                    stage: targetStage,
+                                    source: 'sourcing-agent',
+                                    score: aiScore
+                                });
+
+                                pulseService.addEvent({
+                                    type: 'AGENT_ACTION',
+                                    message: shouldPromote
+                                        ? `✅ ${candidate.name} auto-promoted to Long List (${aiScore}/100 AI score) for "${job.title}".`
+                                        : `📝 ${candidate.name} moved to New for recruiter review (${aiScore}/100 AI score) for "${job.title}".`,
+                                    severity: shouldPromote ? 'success' : 'info',
+                                    metadata: {
+                                        candidateId: candidate.id,
+                                        jobId: job.id,
+                                        aiScore,
+                                        semanticScore,
+                                        targetStage,
+                                        agentType: 'SOURCING'
+                                    }
+                                });
+
+                                void pipelineEventService.logEvent({
+                                    candidateId: candidate.id,
+                                    candidateName: candidate.name,
+                                    jobId: job.id,
+                                    jobTitle: job.title,
+                                    eventType: 'STAGE_MOVED',
+                                    actorType: 'agent',
+                                    actorId: 'sourcing-agent',
+                                    fromStage: 'sourced',
+                                    toStage: targetStage,
+                                    summary: shouldPromote
+                                        ? `Auto-promoted to Long List (AI ${aiScore}/100).`
+                                        : `Moved to New for recruiter review (AI ${aiScore}/100).`,
+                                    metadata: { aiScore, semanticScore, decision }
+                                });
                             } else {
                                 const proposalCandidate = {
                                     id: candidate.id,

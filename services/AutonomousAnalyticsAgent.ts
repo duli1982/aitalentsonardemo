@@ -3,11 +3,13 @@
  * Monitors pipeline + talent pool metrics, detects anomalies, and emits Pulse alerts.
  */
 
+import { Type } from '@google/genai';
 import { backgroundJobService } from './BackgroundJobService';
 import { pulseService } from './PulseService';
 import { supabase } from './supabaseClient';
 import { aiService } from './AIService';
 import type { AgentMode } from './AgentSettingsService';
+import { sanitizeForPrompt, buildSecurePrompt } from '../utils/promptSecurity';
 
 export type AnalyticsAlertSeverity = 'info' | 'warning' | 'error';
 
@@ -291,14 +293,25 @@ class AutonomousAnalyticsAgent {
 
     private async tryGenerateAiInsight(snapshot: PipelineSnapshot) {
         try {
-            const prompt = [
-                'You are an analytics agent for a recruiting pipeline.',
-                'Given this snapshot JSON, return JSON with keys: insight (string) and recommendation (string).',
-                'Be brief and actionable. If no issues, highlight the strongest signal.',
-                JSON.stringify(snapshot)
-            ].join('\n');
+            const prompt = buildSecurePrompt({
+                system: 'You are an analytics agent for a recruiting pipeline. Given a pipeline snapshot, return JSON with keys: insight (string) and recommendation (string). Be brief and actionable. If no issues, highlight the strongest signal.',
+                dataBlocks: [
+                    { label: 'PIPELINE_SNAPSHOT', content: sanitizeForPrompt(JSON.stringify(snapshot), 4000) }
+                ],
+                outputSpec: 'Return ONLY valid JSON: { "insight": string, "recommendation": string }'
+            });
 
-            const result = await aiService.generateJson<{ insight: string; recommendation: string }>(prompt);
+            // Layer 6: Enforce structured output schema at the API level.
+            const analyticsSchema = {
+                type: Type.OBJECT,
+                properties: {
+                    insight: { type: Type.STRING, description: 'A brief actionable insight about the pipeline.' },
+                    recommendation: { type: Type.STRING, description: 'A concise recommendation based on the insight.' }
+                },
+                required: ['insight', 'recommendation']
+            };
+
+            const result = await aiService.generateJson<{ insight: string; recommendation: string }>(prompt, analyticsSchema);
             if (!result?.insight || !result?.recommendation) return;
 
             this.emitAlert({

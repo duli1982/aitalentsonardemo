@@ -1,6 +1,9 @@
+import { Type } from '@google/genai';
 import type { CandidateSnapshot, JobSnapshot, RoleContextPack } from '../types';
 import { aiService } from './AIService';
 import { computeMatchScorecard } from './MatchScorecardService';
+import { sanitizeForPrompt, sanitizeArray, sanitizeShort, buildSecurePrompt } from '../utils/promptSecurity';
+import { validateGenericOutput } from '../utils/outputValidation';
 
 export type TruthCheckRubricBand = 'strong' | 'adequate' | 'concern';
 
@@ -128,53 +131,98 @@ class TruthCheckService {
 
     const { job, candidate, contextPack } = params;
 
-    const prompt = `
-You are Talent Sonar. Create a "Skills Truth Check" for a recruiter.
+    const prompt = buildSecurePrompt({
+      system: `You are Talent Sonar. Create a "Skills Truth Check" for a recruiter.
 
 Constraints:
 - Return ONLY valid JSON.
 - Exactly 5 questions.
 - Every question MUST start with "Describe the last time...".
 - Each question must include a rubric with 3 bands: strong/adequate/concern.
-- Questions must be tailored to the job and candidate; focus on hands-on proof.
-
-Job:
-- Title: ${job.title}
-- Required skills: ${(job.requiredSkills || []).join(', ')}
-- Description: ${(job.description || '').slice(0, 1200)}
-
-Role Context Pack (optional):
-${contextPack?.answers ? safeText(JSON.stringify(contextPack.answers), 900) : 'N/A'}
-
-Candidate:
-- Name: ${candidate.name}
-- Role: ${safeText(candidate.role ?? '', 160)}
-- Skills: ${(candidate.skills || []).join(', ')}
-- Summary: ${safeText(candidate.summary ?? '', 700)}
-
-Output schema:
+- Questions must be tailored to the job and candidate; focus on hands-on proof.`,
+      dataBlocks: [
+        {
+          label: 'JOB',
+          content: [
+            `Title: ${sanitizeShort(job.title)}`,
+            `Required skills: ${sanitizeArray(job.requiredSkills || []).join(', ')}`,
+            `Description: ${sanitizeForPrompt((job.description || '').slice(0, 1200), 1200)}`
+          ].join('\n')
+        },
+        {
+          label: 'ROLE_CONTEXT',
+          content: contextPack?.answers ? sanitizeForPrompt(JSON.stringify(contextPack.answers), 900) : 'N/A'
+        },
+        {
+          label: 'CANDIDATE',
+          content: [
+            `Name: ${sanitizeShort(candidate.name)}`,
+            `Role: ${sanitizeShort(candidate.role ?? '', 160)}`,
+            `Skills: ${sanitizeArray(candidate.skills || []).join(', ')}`,
+            `Summary: ${sanitizeForPrompt(candidate.summary ?? '', 700)}`
+          ].join('\n')
+        }
+      ],
+      outputSpec: `Output schema:
 {
   "version": 1,
   "jobId": "${job.id}",
   "candidateId": "${String(candidate.id)}",
   "questions": [
     { "id": "tcq_1", "question": "Describe the last time...", "rubric": { "strong": ["..."], "adequate": ["..."], "concern": ["..."] } },
-    { "id": "tcq_2", "question": "Describe the last time...", "rubric": { "strong": ["..."], "adequate": ["..."], "concern": ["..."] } },
-    { "id": "tcq_3", "question": "Describe the last time...", "rubric": { "strong": ["..."], "adequate": ["..."], "concern": ["..."] } },
-    { "id": "tcq_4", "question": "Describe the last time...", "rubric": { "strong": ["..."], "adequate": ["..."], "concern": ["..."] } },
-    { "id": "tcq_5", "question": "Describe the last time...", "rubric": { "strong": ["..."], "adequate": ["..."], "concern": ["..."] } }
+    { "id": "tcq_2", "question": "...", "rubric": { ... } },
+    { "id": "tcq_3", "question": "...", "rubric": { ... } },
+    { "id": "tcq_4", "question": "...", "rubric": { ... } },
+    { "id": "tcq_5", "question": "...", "rubric": { ... } }
   ],
   "createdAt": "${new Date().toISOString()}",
   "method": "ai"
-}
-`;
+}`
+    });
 
-    const res = await aiService.generateJson<TruthCheckPack>(prompt);
+    // Layer 6: Enforce structured output schema at the API level.
+    const truthCheckSchema = {
+      type: Type.OBJECT,
+      properties: {
+        version: { type: Type.NUMBER },
+        jobId: { type: Type.STRING },
+        candidateId: { type: Type.STRING },
+        questions: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              id: { type: Type.STRING },
+              question: { type: Type.STRING, description: 'Must start with "Describe the last time..."' },
+              rubric: {
+                type: Type.OBJECT,
+                properties: {
+                  strong: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  adequate: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  concern: { type: Type.ARRAY, items: { type: Type.STRING } }
+                },
+                required: ['strong', 'adequate', 'concern']
+              }
+            },
+            required: ['id', 'question', 'rubric']
+          }
+        },
+        createdAt: { type: Type.STRING },
+        method: { type: Type.STRING }
+      },
+      required: ['version', 'jobId', 'candidateId', 'questions', 'createdAt', 'method']
+    };
+
+    const res = await aiService.generateJson<TruthCheckPack>(prompt, truthCheckSchema);
     if (!res.success || !res.data) return fallback;
 
     const pack = res.data as any;
     if (!pack || pack.version !== 1 || !Array.isArray(pack.questions) || pack.questions.length !== 5) return fallback;
     if (!pack.questions.every((q: any) => String(q.question || '').toLowerCase().startsWith('describe the last time'))) return fallback;
+
+    // Layer 5: Validate AI output for prompt leakage and injection artifacts.
+    const outputValidation = validateGenericOutput(pack);
+    if (!outputValidation.valid) return fallback;
 
     return {
       ...pack,

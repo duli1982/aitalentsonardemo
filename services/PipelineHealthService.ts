@@ -1,3 +1,4 @@
+import { Type } from '@google/genai';
 import type { Candidate, Job } from '../types';
 import { aiService } from './AIService';
 
@@ -104,7 +105,44 @@ Return ONLY valid JSON with:
 }
 `;
 
-    const res = await aiService.generateJson<Omit<PipelineHealthAnalysis, 'method'>>(prompt);
+    // Layer 6: Enforce structured output schema at the API level.
+    const pipelineSchema = {
+      type: Type.OBJECT,
+      properties: {
+        overallHealth: { type: Type.NUMBER, description: 'Overall pipeline health score 0-100.' },
+        healthRating: { type: Type.STRING, description: 'Rating: excellent, good, fair, poor, or critical.' },
+        metrics: {
+          type: Type.OBJECT,
+          properties: {
+            totalCandidates: { type: Type.NUMBER },
+            avgTimeToHire: { type: Type.NUMBER },
+            conversionRate: { type: Type.NUMBER },
+            atRiskCount: { type: Type.NUMBER }
+          },
+          required: ['totalCandidates', 'avgTimeToHire', 'conversionRate', 'atRiskCount']
+        },
+        alerts: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              type: { type: Type.STRING },
+              severity: { type: Type.STRING },
+              title: { type: Type.STRING },
+              description: { type: Type.STRING },
+              affectedCandidates: { type: Type.ARRAY, items: { type: Type.STRING } },
+              recommendation: { type: Type.STRING }
+            },
+            required: ['type', 'severity', 'title', 'description', 'affectedCandidates', 'recommendation']
+          }
+        },
+        insights: { type: Type.ARRAY, items: { type: Type.STRING } },
+        recommendations: { type: Type.ARRAY, items: { type: Type.STRING } }
+      },
+      required: ['overallHealth', 'healthRating', 'metrics', 'alerts', 'insights', 'recommendations']
+    };
+
+    const res = await aiService.generateJson<Omit<PipelineHealthAnalysis, 'method'>>(prompt, pipelineSchema);
     if (!res.success || !res.data) return fallback;
 
     const data = res.data as any;

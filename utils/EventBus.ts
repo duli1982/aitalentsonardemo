@@ -95,6 +95,12 @@ export const EVENTS = {
 
     // Agent proposals
     PROPOSED_ACTIONS_CHANGED: 'agent:proposals:changed',
+
+    // Intake Call events
+    INTAKE_CALL_STARTED: 'intake:call:started',
+    INTAKE_CALL_ENDED: 'intake:call:ended',
+    INTAKE_SCORECARD_READY: 'intake:scorecard:ready',
+    INTAKE_SCORECARD_APPROVED: 'intake:scorecard:approved',
 } as const;
 
 export type EventType = typeof EVENTS[keyof typeof EVENTS];

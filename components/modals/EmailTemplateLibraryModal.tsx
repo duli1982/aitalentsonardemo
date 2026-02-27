@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Type } from '@google/genai';
 import { X, Mail, Loader2, Copy, Send, Sparkles, CheckCircle } from 'lucide-react';
 import type { Candidate, Job } from '../../types';
 import { aiService } from '../../services/AIService';
@@ -182,7 +183,19 @@ const EmailTemplateLibraryModal: React.FC<EmailTemplateLibraryModalProps> = ({ i
                 return;
             }
 
-            const result = await aiService.generateJson<PersonalizedEmail>(prompt);
+            // Layer 6: Enforce structured output schema at the API level.
+            const emailSchema = {
+                type: Type.OBJECT,
+                properties: {
+                    subject: { type: Type.STRING, description: 'Email subject line.' },
+                    body: { type: Type.STRING, description: 'Full email body.' },
+                    tone: { type: Type.STRING, description: 'Tone: friendly, professional, warm, empathetic, or direct.' },
+                    personalizedElements: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'Elements personalized for this candidate.' }
+                },
+                required: ['subject', 'body', 'tone', 'personalizedElements']
+            };
+
+            const result = await aiService.generateJson<PersonalizedEmail>(prompt, emailSchema);
             if (!result.success || !result.data) {
                 const fallback = buildTemplateEmail({ templateId, candidate, job, additionalContext });
                 setPersonalizedEmail(fallback);

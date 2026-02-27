@@ -1,6 +1,8 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import crypto from 'crypto';
 import { getEnv, getGeminiApiKey } from './env';
+import { sanitizeForPrompt, buildSecurePrompt } from '../../../utils/promptSecurity';
+import { validateParsedResume } from '../../../utils/outputValidation';
 
 export type ParsedResume = {
   name: string;
@@ -78,7 +80,21 @@ export class GeminiResumeService {
     const run = (async () => {
       for (const model of this.models) {
         try {
-          const prompt = `You are a resume parser. Extract structured information from the following resume text.\nReturn a JSON object with these fields:\n- name: string\n- email: string (if found)\n- phone: string (if found)\n- skills: string[] (technical and soft skills)\n- experience: array of {title, company, duration, description}\n- education: array of {degree, institution, year}\n- summary: string (2-3 sentence professional summary)\n\nResume text:\n\"\"\"\n${resumeText}\n\"\"\"\n\nReturn ONLY valid JSON, no markdown or explanation.`;
+          const prompt = buildSecurePrompt({
+            system: `You are a resume parser. Extract structured information from the resume text provided in the data block below.
+Return a JSON object with these fields:
+- name: string
+- email: string (if found)
+- phone: string (if found)
+- skills: string[] (technical and soft skills)
+- experience: array of {title, company, duration, description}
+- education: array of {degree, institution, year}
+- summary: string (2-3 sentence professional summary)`,
+            dataBlocks: [
+              { label: 'CANDIDATE_RESUME', content: sanitizeForPrompt(resumeText, 8000) }
+            ],
+            outputSpec: 'Return ONLY valid JSON matching the schema above. No markdown, no explanation, no extra keys.'
+          });
 
           const response = await this.client.models.generateContent({
             model,
@@ -124,6 +140,13 @@ export class GeminiResumeService {
           });
 
           const parsed = JSON.parse(response.text) as ParsedResume;
+
+          // Layer 5: Validate parsed resume output for leakage and anomalies.
+          const resumeValidation = validateParsedResume(parsed);
+          if (!resumeValidation.validation.valid) {
+            console.warn(`[GeminiResumeService] Resume output failed validation (model=${model}).`);
+          }
+
           cacheSet(key, parsed, 1000 * 60 * 10);
           return { ok: true as const, data: parsed };
         } catch (error) {

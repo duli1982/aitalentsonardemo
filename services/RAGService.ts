@@ -9,6 +9,7 @@
  */
 
 import { semanticSearchService } from './SemanticSearchService';
+import { agenticTools } from './AgenticSearchTools';
 import { aiService } from './AIService';
 import { supabase } from './supabaseClient';
 import { graphQueryService } from './GraphQueryService';
@@ -46,51 +47,45 @@ class RAGService {
 
         this.log(`[RAGService] Processing query: "${query}"`);
 
-        // Step 1: Retrieve relevant candidates from vector database
-        const fallbackThresholds = [searchThreshold, 0.6, 0.45, 0.35, 0.25]
-            .filter((value, index, list) => list.indexOf(value) === index)
-            .filter(value => value > 0 && value <= 1);
-
+        // Step 1: Tool Selection (Agentic Retrieval)
         let searchResults: any[] = [];
-        let usedThreshold = searchThreshold;
-        let lastSearchError: AppError | null = null;
+        let usedTool = 'vector';
 
-        for (const threshold of fallbackThresholds) {
-            usedThreshold = threshold;
-            const res = await semanticSearchService.search(query, {
-                threshold,
-                limit: maxCandidates
-            });
+        // Simple Heuristic: Check for specific entities (in a real agent, the LLM decides this)
+        const companyMatch = query.match(/at\s+([A-Z][a-z0-9]+)/); // e.g. "at Google"
+        const skillMatch = query.match(/knowledge of\s+([A-Za-z0-9]+)/) || query.match(/expert in\s+([A-Za-z0-9]+)/);
 
-            searchResults = res.success ? res.data : res.data ?? [];
-            if (!res.success) lastSearchError = res.error;
-            if (searchResults.length > 0) break;
+        let toolRes;
+
+        if (companyMatch) {
+            usedTool = 'keyword (company)';
+            toolRes = await agenticTools.keyword.execute({ query: companyMatch[1], limit: maxCandidates });
+        } else if (skillMatch) {
+            usedTool = 'keyword (skill)';
+            toolRes = await agenticTools.keyword.execute({ query: skillMatch[1], limit: maxCandidates });
+        } else {
+            // Default to Vector Search
+            usedTool = 'vector';
+            toolRes = await agenticTools.vector.execute({ query, limit: maxCandidates });
         }
 
-        this.log(`[RAGService] Found ${searchResults.length} relevant candidates (threshold=${usedThreshold})`);
+        if (toolRes.success) {
+            searchResults = toolRes.data.results.map((r: any) => ({
+                ...r,
+                // Ensure compatibility with downstream RAG logic
+                similarity: r.similarity ?? (usedTool.includes('keyword') ? 1.0 : 0),
+                title: r.role || r.title || 'Candidate'
+            }));
+        } else {
+            console.warn(`[RAGService] Tool ${usedTool} failed:`, toolRes.error);
+        }
+
+        this.log(`[RAGService] Found ${searchResults.length} candidates using ${usedTool}`);
 
         if (searchResults.length === 0) {
-            let totalCandidatesInDb: number | null = null;
-            try {
-                const countRes = await semanticSearchService.getTotalCount();
-                totalCandidatesInDb = countRes.success ? countRes.data : countRes.data ?? null;
-            } catch {
-                totalCandidatesInDb = null;
-            }
-
-            const thresholdText = fallbackThresholds.length > 1
-                ? `I tried similarity thresholds ${fallbackThresholds.map(t => Math.round(t * 100)).join('% → ')}%.`
-                : `I used a similarity threshold of ${Math.round(usedThreshold * 100)}%.`;
-
-            const dbHint = totalCandidatesInDb === 0
-                ? 'It looks like your vector database is empty (0 candidate_documents). Run ingestion/migration first.'
-                : 'Try using more candidate-like keywords (skills, role title, location) instead of a long instruction, or lower the similarity threshold.';
-
-            const errorHint = lastSearchError ? `\n\nNote: Search is currently degraded. Debug ID: ${lastSearchError.debugId}` : '';
-
             return {
                 query,
-                response: `I couldn't find any candidates matching your criteria in the database. ${thresholdText}\n\n${dbHint}${errorHint}`,
+                response: `I couldn't find any candidates matching your criteria using ${usedTool} search.`,
                 sourceCandidates: [],
                 timestamp: new Date()
             };
@@ -396,6 +391,7 @@ Your response:`;
     async generateCandidateBrief(params: {
         candidateQuery: string;
         purpose: string;
+        significant?: string;
     }): Promise<RAGResult> {
         const { candidateQuery, purpose } = params;
 

@@ -1,10 +1,12 @@
 // AIService - Gemini API integration for real AI capabilities
 // Provides resume parsing, candidate Q&A, and text analysis
 
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 import type { AppError } from '../types/errors';
 import { err, ok, type Result } from '../types/result';
 import { notConfigured, rateLimited, unknown } from './errorHandling';
+import { sanitizeForPrompt, sanitizeArray, sanitizeShort, buildSecurePrompt } from '../utils/promptSecurity';
+import { validateGenericOutput } from '../utils/outputValidation';
 
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
 const DISABLE_AI = String(import.meta.env.VITE_DISABLE_AI || '').toLowerCase() === 'true';
@@ -277,25 +279,54 @@ class AIService {
         }
 
         try {
-            const prompt = `
-You are a resume parser. Extract structured information from the following resume text.
-Return a JSON object with these fields:
-- name: string
-- email: string (if found)
-- phone: string (if found)
-- skills: string[] (technical and soft skills)
-- experience: array of {title, company, duration, description}
-- education: array of {degree, institution, year}
-- summary: string (2-3 sentence professional summary)
+            const prompt = buildSecurePrompt({
+                system: `You are a resume parser. Extract structured information from the resume text in the data block below.
+Return a JSON object with: name, email (if found), phone (if found), skills[], experience[], education[], summary.`,
+                dataBlocks: [
+                    { label: 'CANDIDATE_RESUME', content: sanitizeForPrompt(resumeText, 8000) }
+                ],
+                outputSpec: 'Return ONLY valid JSON, no markdown or explanation.'
+            });
 
-Resume text:
-"""
-${resumeText}
-"""
+            // Layer 6: Enforce structured output schema at the API level.
+            const schema = {
+                type: Type.OBJECT,
+                properties: {
+                    name: { type: Type.STRING, description: 'Full name of the candidate.' },
+                    email: { type: Type.STRING, description: 'Email address if found.' },
+                    phone: { type: Type.STRING, description: 'Phone number if found.' },
+                    skills: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'Technical and soft skills.' },
+                    experience: {
+                        type: Type.ARRAY,
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                title: { type: Type.STRING },
+                                company: { type: Type.STRING },
+                                duration: { type: Type.STRING },
+                                description: { type: Type.STRING }
+                            },
+                            required: ['title', 'company', 'duration', 'description']
+                        }
+                    },
+                    education: {
+                        type: Type.ARRAY,
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                degree: { type: Type.STRING },
+                                institution: { type: Type.STRING },
+                                year: { type: Type.STRING }
+                            },
+                            required: ['degree', 'institution', 'year']
+                        }
+                    },
+                    summary: { type: Type.STRING, description: '2-3 sentence professional summary.' }
+                },
+                required: ['name', 'skills', 'experience', 'education', 'summary']
+            };
 
-Return ONLY valid JSON, no markdown or explanation.`;
-
-            return await this.generateJson<ParsedResume>(prompt);
+            return await this.generateJson<ParsedResume>(prompt, schema);
         } catch (error) {
             console.error('[AIService] Resume parsing failed:', error);
             return err(this.unknownError('Signal extraction failed.', error));
@@ -313,18 +344,21 @@ Return ONLY valid JSON, no markdown or explanation.`;
         }
 
         try {
-            const prompt = `
-Generate ${count} behavioral and technical interview questions for a ${jobRole} candidate.
-The candidate has these skills: ${candidateSkills.join(', ')}.
+            const prompt = buildSecurePrompt({
+                system: `Generate ${count} behavioral and technical interview questions. Focus on: skill verification, situational/behavioral (STAR format), and problem-solving scenarios.`,
+                dataBlocks: [
+                    { label: 'CANDIDATE_CONTEXT', content: `Job Role: ${sanitizeShort(jobRole)}\nSkills: ${sanitizeArray(candidateSkills).join(', ')}` }
+                ],
+                outputSpec: 'Return a JSON array of strings, no explanation.'
+            });
 
-Focus on:
-- Skill verification questions
-- Situational/behavioral questions (STAR format)
-- Problem-solving scenarios
+            // Layer 6: Enforce structured output schema at the API level.
+            const schema = {
+                type: Type.ARRAY,
+                items: { type: Type.STRING, description: 'A behavioral or technical interview question.' }
+            };
 
-Return a JSON array of strings, no explanation.`;
-
-            return await this.generateJson<string[]>(prompt);
+            return await this.generateJson<string[]>(prompt, schema);
         } catch (error) {
             console.error('[AIService] Question generation failed:', error);
             return err(this.unknownError('AI request failed.', error));
@@ -334,8 +368,12 @@ Return a JSON array of strings, no explanation.`;
     /**
      * Generate free-form text from a prompt.
      * Useful for agent debriefs/summaries.
+     *
+     * Layer 6: When `options.schema` is provided, the Gemini Structured Output API
+     * is used (`responseMimeType: 'application/json'` + `responseSchema`), which
+     * constrains the model to emit only valid JSON conforming to the schema.
      */
-    async generateText(prompt: string): Promise<AIResponse<string>> {
+    async generateText(prompt: string, options?: { schema?: any }): Promise<AIResponse<string>> {
         if (!this.client) {
             return ok('(Mock) AI text generation is disabled. Set VITE_GEMINI_API_KEY for real output.');
         }
@@ -364,9 +402,17 @@ Return a JSON array of strings, no explanation.`;
                 await this.textGate.acquire();
 
                 try {
+                    // Layer 6: Build config with structured output schema when provided.
+                    const config: Record<string, any> = {};
+                    if (options?.schema) {
+                        config.responseMimeType = 'application/json';
+                        config.responseSchema = options.schema;
+                    }
+
                     const response = await this.client.models.generateContent({
                         model,
-                        contents: prompt
+                        contents: prompt,
+                        ...(Object.keys(config).length > 0 ? { config } : {})
                     });
 
                     const text = (response.text || '').trim();
@@ -404,17 +450,32 @@ Return a JSON array of strings, no explanation.`;
 
     /**
      * Generate and parse a JSON object from a prompt.
-     * The prompt must instruct the model to return only valid JSON.
+     *
+     * Layer 6: When `schema` is provided, the Gemini Structured Output API is used
+     * to guarantee well-formed JSON at the API level. When schema is absent, the
+     * model response is best-effort parsed (markdown fences stripped).
      */
-    async generateJson<T>(prompt: string): Promise<AIResponse<T>> {
-        const textResponse = await this.generateText(prompt);
+    async generateJson<T>(prompt: string, schema?: any): Promise<AIResponse<T>> {
+        const textResponse = await this.generateText(prompt, schema ? { schema } : undefined);
         if (!textResponse.success || !textResponse.data) {
             return err(textResponse.error, { retryAfterMs: textResponse.retryAfterMs });
         }
 
         try {
-            const jsonStr = textResponse.data.replace(/```json\n?|\n?```/g, '').trim();
+            // When a schema is used, the API returns pure JSON — no markdown fences.
+            // Without a schema, strip markdown fences as a fallback.
+            const jsonStr = schema
+                ? textResponse.data.trim()
+                : textResponse.data.replace(/```json\n?|\n?```/g, '').trim();
             const parsed = JSON.parse(jsonStr) as T;
+
+            // Layer 5: Validate all AI JSON output for prompt leakage and injection artifacts.
+            const validation = validateGenericOutput(parsed);
+            if (!validation.valid) {
+                console.error('[AIService] AI output failed validation — may contain leaked prompt or injection artifacts.');
+                return err(this.unknownError('AI output failed security validation.'));
+            }
+
             return ok(parsed);
         } catch (error) {
             console.error('[AIService] JSON parse failed:', error);
@@ -429,11 +490,29 @@ Return a JSON array of strings, no explanation.`;
         }
 
         try {
-            const prompt = `
-Analyze this text and extract any knowledge signals.
-...
-`;
-            return await this.generateJson<{ skill: string; confidence: number; evidence: string }[]>(prompt);
+            const prompt = buildSecurePrompt({
+                system: 'Analyze text and extract knowledge signals. Return JSON array of { skill: string, confidence: number, evidence: string }.',
+                dataBlocks: [
+                    { label: 'TEXT_TO_ANALYZE', content: sanitizeForPrompt(text, 4000) }
+                ],
+                outputSpec: 'Return ONLY a valid JSON array.'
+            });
+
+            // Layer 6: Enforce structured output schema at the API level.
+            const schema = {
+                type: Type.ARRAY,
+                items: {
+                    type: Type.OBJECT,
+                    properties: {
+                        skill: { type: Type.STRING, description: 'Identified skill or competency.' },
+                        confidence: { type: Type.NUMBER, description: 'Confidence score 0-100.' },
+                        evidence: { type: Type.STRING, description: 'Evidence snippet supporting this signal.' }
+                    },
+                    required: ['skill', 'confidence', 'evidence']
+                }
+            };
+
+            return await this.generateJson<{ skill: string; confidence: number; evidence: string }[]>(prompt, schema);
         } catch (error) {
             console.error('[AIService] Signal extraction failed:', error);
             return err(this.unknownError('Signal extraction failed.', error));

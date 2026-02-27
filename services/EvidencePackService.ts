@@ -1,6 +1,10 @@
+import { Type } from '@google/genai';
 import type { CandidateSnapshot, EvidencePack, JobSnapshot, RoleContextPack } from '../types';
 import { aiService } from './AIService';
 import { computeMatchScorecard } from './MatchScorecardService';
+import { sanitizeForPrompt, sanitizeArray, sanitizeShort, buildSecurePrompt } from '../utils/promptSecurity';
+import { validateEvidencePack } from '../utils/outputValidation';
+import { agenticTools } from './AgenticSearchTools';
 
 function clamp01(value: number): number {
   if (!Number.isFinite(value)) return 0;
@@ -14,16 +18,14 @@ function safeText(input: unknown, maxLen: number): string {
 }
 
 function getCandidateContext(candidate: CandidateSnapshot): string {
-  const summary = safeText(candidate.summary, 900);
-  const role = safeText(candidate.role, 160);
-  const companies = '';
+  const summary = sanitizeForPrompt(candidate.summary, 900);
+  const role = sanitizeShort(candidate.role, 160);
 
   return [
-    `Name: ${candidate.name}`,
+    `Name: ${sanitizeShort(candidate.name)}`,
     role ? `Role: ${role}` : '',
-    companies ? `Companies: ${companies}` : '',
-    candidate.location ? `Location: ${candidate.location}` : '',
-    Array.isArray(candidate.skills) && candidate.skills.length ? `Skills: ${candidate.skills.slice(0, 30).join(', ')}` : '',
+    candidate.location ? `Location: ${sanitizeShort(candidate.location)}` : '',
+    Array.isArray(candidate.skills) && candidate.skills.length ? `Skills: ${sanitizeArray(candidate.skills.slice(0, 30)).join(', ')}` : '',
     summary ? `Summary: ${summary}` : ''
   ]
     .filter(Boolean)
@@ -141,13 +143,36 @@ class EvidencePackService {
     if (!aiService.isAvailable()) return fallback;
 
     const { job, candidate, contextPack } = params;
+
+    // Step 1: Fact Check (Agentic Verification)
+    // Heuristic: Extract the first "Company" looking string from the summary or role.
+    // Real implementation would parse structure or ask LLM to extract "Latest Company".
+    let verificationContext = "No verification data available.";
+    const potentialCompany = candidate.role?.split(' at ')?.[1] || (candidate as any).metadata?.company;
+
+    if (potentialCompany) {
+      try {
+        const verifyRes = await agenticTools.factChecker.execute({ company: potentialCompany, role: candidate.role });
+        if (verifyRes.success && verifyRes.data.results.length > 0) {
+          const peers = verifyRes.data.results;
+          verificationContext = `Verified: We have ${verifyRes.data.metadata.peerCount} other candidates from ${potentialCompany} in the database.\n` +
+            `Peer Examples: ${peers.map((p: any) => `${p.title}`).join(', ')}.\n` +
+            `Use this to confirm if the candidate's skills align with other ${potentialCompany} hires.`;
+        } else {
+          verificationContext = `Verification Attempt: Found no other candidates from ${potentialCompany} in our database to validte against.`;
+        }
+      } catch (e) {
+        console.warn('Fact check failed', e);
+      }
+    }
+
     const candidateText = getCandidateContext(candidate);
     const contextText = contextPack?.answers
-      ? safeText(JSON.stringify(contextPack.answers), 900)
+      ? sanitizeForPrompt(JSON.stringify(contextPack.answers), 900)
       : '';
 
-    const prompt = `
-You are Talent Sonar. Build an evidence-first mini pack for a recruiter to review.
+    const prompt = buildSecurePrompt({
+      system: `You are Talent Sonar. Build an evidence-first mini pack for a recruiter to review.
 
 Constraints:
 - Return ONLY valid JSON.
@@ -159,21 +184,31 @@ Constraints:
 - "day90Trajectory": Forecast the first 90 days. What is the main focus and what is the friction point at 30, 60, and 90 days?
 - "conspicuousOmissions": Identify 1-2 skills/achievements expected for this role/seniority but MISSING (e.g., "Senior dev with no mentorship exp").
 - "highStakesQuestions": Generate 2 behavioral questions probing the biggest risks.
-- If evidence is missing, explicitly say so in "missing".
-
-Job:
-- Title: ${job.title}
-- Location: ${job.location}
-- Required skills: ${(job.requiredSkills || []).join(', ')}
-- Description: ${(job.description || '').slice(0, 1200)}
-
-Role Context Pack (optional):
-${contextText || 'N/A'}
-
-Candidate:
-${candidateText}
-
-Output schema:
+- If evidence is missing, explicitly say so in "missing".`,
+      dataBlocks: [
+        {
+          label: 'JOB',
+          content: [
+            `Title: ${sanitizeShort(job.title)}`,
+            `Location: ${sanitizeShort(job.location)}`,
+            `Required skills: ${sanitizeArray(job.requiredSkills || []).join(', ')}`,
+            `Description: ${sanitizeForPrompt((job.description || '').slice(0, 1200), 1200)}`
+          ].join('\n')
+        },
+        {
+          label: 'ROLE_CONTEXT',
+          content: contextText || 'N/A'
+        },
+        {
+          label: 'VERIFICATION_DATA',
+          content: verificationContext
+        },
+        {
+          label: 'CANDIDATE',
+          content: candidateText
+        }
+      ],
+      outputSpec: `Output schema:
 {
   "version": 1,
   "jobId": "${job.id}",
@@ -206,10 +241,117 @@ Output schema:
   "confidence": 0.0,
   "createdAt": "${new Date().toISOString()}",
   "method": "ai"
-}
-`;
+}`
+    });
 
-    const res = await aiService.generateJson<EvidencePack>(prompt);
+    // Layer 6: Enforce structured output schema at the API level.
+    const evidenceSchema = {
+      type: Type.OBJECT,
+      properties: {
+        version: { type: Type.NUMBER },
+        jobId: { type: Type.STRING },
+        candidateId: { type: Type.STRING },
+        matchReasons: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              title: { type: Type.STRING },
+              claim: { type: Type.STRING },
+              snippet: {
+                type: Type.OBJECT,
+                properties: {
+                  text: { type: Type.STRING },
+                  source: { type: Type.STRING },
+                  ref: { type: Type.STRING }
+                },
+                required: ['text', 'source']
+              }
+            },
+            required: ['title', 'claim', 'snippet']
+          }
+        },
+        risk: {
+          type: Type.OBJECT,
+          properties: {
+            statement: { type: Type.STRING },
+            mitigation: { type: Type.STRING }
+          },
+          required: ['statement', 'mitigation']
+        },
+        conspicuousOmissions: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              topic: { type: Type.STRING },
+              reason: { type: Type.STRING }
+            },
+            required: ['topic', 'reason']
+          }
+        },
+        highStakesQuestions: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              question: { type: Type.STRING },
+              expectedSignal: { type: Type.STRING },
+              riskArea: { type: Type.STRING }
+            },
+            required: ['question', 'expectedSignal', 'riskArea']
+          }
+        },
+        preMortemAnalysis: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              failureMode: { type: Type.STRING },
+              probability: { type: Type.STRING },
+              prevention: { type: Type.STRING }
+            },
+            required: ['failureMode', 'probability', 'prevention']
+          }
+        },
+        referenceCheckGuide: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              question: { type: Type.STRING },
+              context: { type: Type.STRING }
+            },
+            required: ['question', 'context']
+          }
+        },
+        day90Trajectory: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              period: { type: Type.STRING },
+              focus: { type: Type.STRING },
+              potentialRisk: { type: Type.STRING }
+            },
+            required: ['period', 'focus', 'potentialRisk']
+          }
+        },
+        truthCheckPreviewQuestions: { type: Type.ARRAY, items: { type: Type.STRING } },
+        missing: { type: Type.ARRAY, items: { type: Type.STRING } },
+        confidence: { type: Type.NUMBER },
+        createdAt: { type: Type.STRING },
+        method: { type: Type.STRING }
+      },
+      required: [
+        'version', 'jobId', 'candidateId', 'matchReasons', 'risk',
+        'conspicuousOmissions', 'highStakesQuestions', 'preMortemAnalysis',
+        'referenceCheckGuide', 'day90Trajectory', 'truthCheckPreviewQuestions',
+        'missing', 'confidence', 'createdAt', 'method'
+      ]
+    };
+
+    const res = await aiService.generateJson<EvidencePack>(prompt, evidenceSchema);
     if (!res.success || !res.data) return fallback;
 
     // Best-effort sanity checks
@@ -218,10 +360,15 @@ Output schema:
     if (!Array.isArray(pack.matchReasons) || pack.matchReasons.length !== 3) return fallback;
     if (!Array.isArray(pack.truthCheckPreviewQuestions) || pack.truthCheckPreviewQuestions.length !== 2) return fallback;
 
+    // Layer 5: Validate AI output — check for leakage, injection artifacts, confidence anomalies.
+    const validated = validateEvidencePack(pack);
+    if (!validated.validation.valid) return fallback;
+
     return {
       ...pack,
       jobId: String(job.id),
       candidateId: String(candidate.id),
+      confidence: validated.confidence,
       createdAt: String(pack.createdAt || new Date().toISOString()),
       method: 'ai'
     } as EvidencePack;
