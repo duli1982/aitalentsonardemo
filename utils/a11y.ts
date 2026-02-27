@@ -1,6 +1,7 @@
 // Accessibility Utilities - Focus management and keyboard navigation
 
 import { useCallback, useEffect, useRef } from 'react';
+import { TIMING } from '../config/timing';
 
 // Focus trap for modals and dropdowns
 export function useFocusTrap(isActive: boolean) {
@@ -89,12 +90,12 @@ export function useAnnounce() {
         // Small delay for screen reader to pick up
         setTimeout(() => {
             announcer.textContent = message;
-        }, 100);
+        }, TIMING.A11Y_ANNOUNCE_DELAY_MS);
 
         // Clean up
         setTimeout(() => {
             document.body.removeChild(announcer);
-        }, 1000);
+        }, TIMING.A11Y_ANNOUNCE_CLEANUP_DELAY_MS);
     }, []);
 
     return announce;

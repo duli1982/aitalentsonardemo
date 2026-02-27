@@ -6,6 +6,7 @@ import { outreachDraftService } from '../../services/OutreachDraftService';
 import { jobContextPackService } from '../../services/JobContextPackService';
 import { useToast } from '../../contexts/ToastContext';
 import { toCandidateSnapshot, toJobSnapshot } from '../../utils/snapshots';
+import { TIMING } from '../../config/timing';
 
 interface BulkOutreachModalProps {
     isOpen: boolean;
@@ -63,7 +64,7 @@ const BulkOutreachModal: React.FC<BulkOutreachModalProps> = ({ isOpen, onClose, 
     const handleCopy = (candidateId: string, message: string) => {
         navigator.clipboard.writeText(message);
         setCopiedId(candidateId);
-        setTimeout(() => setCopiedId(null), 2000);
+        setTimeout(() => setCopiedId(null), TIMING.CLIPBOARD_COPY_RESET_MS);
     };
 
     const handleEdit = (candidateId: string, newMessage: string) => {

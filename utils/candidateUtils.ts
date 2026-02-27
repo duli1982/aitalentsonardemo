@@ -4,10 +4,12 @@ export const detectHiddenGem = (candidate: Candidate): boolean => {
     // 1. Internal Candidates: High performance + High potential (Learning Agility)
     if (candidate.type === 'internal') {
         const internal = candidate as InternalCandidate;
+        const learningAgility = internal.learningAgility ?? 0;
+        const experienceYears = internal.experienceYears ?? 0;
         // High performer (>=4) AND High Agility (>=4)
         // OR High performer (5) with < 3 years experience (Fast riser)
-        if (internal.performanceRating >= 4 && internal.learningAgility >= 4) return true;
-        if (internal.performanceRating === 5 && internal.experienceYears < 3) return true;
+        if (internal.performanceRating >= 4 && learningAgility >= 4) return true;
+        if (internal.performanceRating === 5 && experienceYears < 3) return true;
 
         // Check for "Junior" title but high skills count
         if (internal.currentRole.toLowerCase().includes('junior') && internal.skills.length > 6) return true;
@@ -30,12 +32,13 @@ export const detectHiddenGem = (candidate: Candidate): boolean => {
     if (candidate.type === 'uploaded') {
         const uploaded = candidate as UploadedCandidate;
         const summary = uploaded.summary?.toLowerCase() || '';
+        const experienceYears = uploaded.experienceYears ?? 0;
         const gemKeywords = ['award', 'honor', 'patent', 'summa cum laude', 'valedictorian', 'exceptional', 'proven track record', 'rapidly promoted'];
 
         if (gemKeywords.some(keyword => summary.includes(keyword))) return true;
 
         // High skill density for experience level (e.g. < 5 years but many skills)
-        if (uploaded.experienceYears < 5 && uploaded.skills.length > 8) return true;
+        if (experienceYears < 5 && uploaded.skills.length > 8) return true;
 
         // RIP Qualification for Regulatory roles (Specific to current context)
         if (uploaded.skills.some(s => s.toLowerCase().includes('rip') || s.toLowerCase().includes('responsible person'))) return true;

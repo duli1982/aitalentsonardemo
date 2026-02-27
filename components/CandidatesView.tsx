@@ -101,7 +101,7 @@ const CandidatesView: React.FC<CandidatesViewProps> = ({ selectedCandidateId, on
   const filteredCandidates = useMemo(() => {
     return allCandidates.filter(candidate => {
       const matchesSearch = searchTerm === '' || candidate.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        candidate.email.toLowerCase().includes(searchTerm.toLowerCase());
+        (candidate.email ?? '').toLowerCase().includes(searchTerm.toLowerCase());
 
       const matchesType = typeFilter === 'all' || candidate.type === typeFilter;
 

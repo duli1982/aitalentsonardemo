@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { Candidate, InternalCandidate, PastCandidate, UploadedCandidate, Job, PipelineStage, PipelineHistory } from '../types';
 import { detectHiddenGem } from '../utils/candidateUtils';
+import { TIMING } from '../config/timing';
 
 interface UseCandidateOperationsProps {
   jobs: Job[];
@@ -14,6 +15,8 @@ interface UseCandidateOperationsProps {
   setJobs: React.Dispatch<React.SetStateAction<Job[]>>;
   showToast: (message: string, type: 'success' | 'error' | 'info' | 'warning', duration?: number) => void;
 }
+
+type JobWithCandidateIds = Job & { candidateIds?: string[] };
 
 export const useCandidateOperations = ({
   jobs,
@@ -115,17 +118,16 @@ export const useCandidateOperations = ({
     if (!isInInternal && !isInPast && !isInUploaded) {
       // Import Supabase candidate into local uploadedCandidates for pipeline tracking
       const imported: UploadedCandidate = {
-        ...(candidate as any),
+        ...candidate,
         id: candidate.id,
         name: candidate.name,
-        role: (candidate as any).role || 'Candidate',
+        role: candidate.role || 'Candidate',
         skills: candidate.skills || [],
-        location: (candidate as any).location || '',
-        experience: (candidate as any).experience ?? (candidate as any).experienceYears ?? 0,
-        availability: (candidate as any).availability || 'Unknown',
+        location: candidate.location || '',
+        experience: candidate.experience ?? candidate.experienceYears ?? 0,
+        availability: candidate.availability || 'Unknown',
         uploadDate: nowIso,
-        source: 'uploaded',
-        type: (candidate as any).type || 'uploaded',
+        type: 'uploaded',
         matchScores: { ...(candidate.matchScores || {}), [jobId]: matchResult.score },
         matchRationales: { ...(candidate.matchRationales || {}), [jobId]: matchResult.rationale },
         pipelineStage: { ...(candidate.pipelineStage || {}), [jobId]: initialStage },
@@ -137,10 +139,13 @@ export const useCandidateOperations = ({
     // Track on the job object as well (used by agents / filtering)
     setJobs(prev =>
       prev.map(j => {
-        if (j.id !== jobId) return j as any;
-        const current = (j as any).candidateIds || [];
+        if (j.id !== jobId) return j;
+        const current = Array.isArray((j as JobWithCandidateIds).candidateIds)
+          ? (j as JobWithCandidateIds).candidateIds as string[]
+          : [];
         const next = Array.from(new Set([...current, candidate.id]));
-        return { ...(j as any), candidateIds: next };
+        const updated: JobWithCandidateIds = { ...j, candidateIds: next };
+        return updated;
       })
     );
 
@@ -203,8 +208,8 @@ export const useCandidateOperations = ({
     const scoredNewCandidates = newCandidates.map(c => ({
       ...c,
       isHiddenGem: detectHiddenGem(c),
-      matchScores: jobs.reduce((acc, job) => ({ ...acc, [job.id]: calculateInitialMatch(job, c).score }), {}),
-      matchRationales: jobs.reduce((acc, job) => ({ ...acc, [job.id]: calculateInitialMatch(job, c).rationale }), {}),
+      matchScores: jobs.reduce<Record<string, number>>((acc, job) => ({ ...acc, [job.id]: calculateInitialMatch(job, c).score }), {}),
+      matchRationales: jobs.reduce<Record<string, string>>((acc, job) => ({ ...acc, [job.id]: calculateInitialMatch(job, c).rationale }), {}),
     }));
     setUploadedCandidates(prev => [...scoredNewCandidates, ...prev]);
 
@@ -234,7 +239,7 @@ export const useCandidateOperations = ({
             .slice(0, 10); // Top 10 constant
          
          if (topNewCandidates.length > 0 && topNewCandidates[0].score >= 50) {
-             setTimeout(() => onAnalyzeBatch(topNewCandidates), 1500);
+             setTimeout(() => onAnalyzeBatch(topNewCandidates), TIMING.AUTO_ANALYZE_BATCH_DELAY_MS);
          }
     }
   }, [jobs, calculateInitialMatch, setUploadedCandidates, showToast]);

@@ -3,10 +3,15 @@ import type { Candidate } from '../types';
 import { supabase } from '../services/supabaseClient';
 import { degradedModeService } from '../services/DegradedModeService';
 import { upstream } from '../services/errorHandling';
+import { TIMING } from '../config/timing';
 
 export interface AllCandidatesOptions {
     enabled?: boolean;
     limit?: number;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
 }
 
 /**
@@ -36,7 +41,7 @@ export const useAllSupabaseCandidates = (options: AllCandidatesOptions = {}) => 
                 const { data, timestamp } = JSON.parse(cached);
                 const age = Date.now() - timestamp;
                 // Cache valid for 5 minutes
-                if (age < 5 * 60 * 1000) {
+                if (age < TIMING.CACHE_TTL_MS) {
                     console.log(`[useAllSupabaseCandidates] Using cached results`);
                     setCandidates(data);
                     setHasMore(data.length === currentLimit);
@@ -55,8 +60,8 @@ export const useAllSupabaseCandidates = (options: AllCandidatesOptions = {}) => 
 
             // Preferred: canonical read model view (candidates -> active document)
             // Fallback: candidate_documents legacy schema.
-            let candidatesData: any[] | null = null;
-            let candidatesError: any = null;
+            let candidatesData: Record<string, unknown>[] | null = null;
+            let candidatesError: unknown = null;
 
             const viewAttempt = await supabase
                 .from('candidate_documents_view')
@@ -73,10 +78,10 @@ export const useAllSupabaseCandidates = (options: AllCandidatesOptions = {}) => 
                     .select('id, metadata, content')
                     .order('id', { ascending: false })
                     .limit(currentLimit);
-                candidatesData = legacyAttempt.data as any[] | null;
+                candidatesData = legacyAttempt.data as Record<string, unknown>[] | null;
                 candidatesError = legacyAttempt.error;
             } else {
-                candidatesData = viewAttempt.data as any[] | null;
+                candidatesData = viewAttempt.data as Record<string, unknown>[] | null;
                 candidatesError = null;
             }
 
@@ -91,21 +96,22 @@ export const useAllSupabaseCandidates = (options: AllCandidatesOptions = {}) => 
 
             console.log(`[useAllSupabaseCandidates] Found ${candidatesData.length} candidates`);
 
-            const parsedCandidates = candidatesData.map((row: any) => {
+            const parsedCandidates = candidatesData.map((row) => {
                 const isViewRow = row.candidate_id !== undefined;
                 const rawMetadata = isViewRow ? row.document_metadata : row.metadata;
-                const metadata = rawMetadata || {};
+                const metadata = asRecord(rawMetadata);
                 const content = typeof row.content === 'string' ? row.content : '';
                 const nameFromContent = content.includes(' - ') ? content.split(' - ')[0].trim() : '';
 
                 const id = String(isViewRow ? row.candidate_id : (metadata.id || row.id));
-                const name = row.name || metadata.name || metadata.full_name || nameFromContent || 'Unknown';
-                const email = row.email || metadata.email || '';
+                const name = String(row.name || metadata.name || metadata.full_name || nameFromContent || 'Unknown');
+                const email = String(row.email || metadata.email || '');
 
                 const rawSkills = row.skills ?? metadata.skills;
+                const rawSkillsRecord = asRecord(rawSkills);
                 const skills =
                     Array.isArray(rawSkills) ? rawSkills.map((s) => String(s)) :
-                        Array.isArray(rawSkills?.data) ? rawSkills.data.map((s: any) => String(s)) :
+                        Array.isArray(rawSkillsRecord.data) ? rawSkillsRecord.data.map((s) => String(s)) :
                             [];
 
                 return {
@@ -141,18 +147,20 @@ export const useAllSupabaseCandidates = (options: AllCandidatesOptions = {}) => 
             const companyMap = new Map<string, string[]>();
             const schoolMap = new Map<string, string[]>();
 
-            companyData?.forEach((row: any) => {
-                const id = row.candidate_id;
-                const companyName = row.companies?.name;
+            companyData?.forEach((row) => {
+                const rec = asRecord(row);
+                const id = String(rec.candidate_id ?? '');
+                const companyName = String(asRecord(rec.companies).name ?? '');
                 if (companyName) {
                     if (!companyMap.has(id)) companyMap.set(id, []);
                     companyMap.get(id)!.push(companyName);
                 }
             });
 
-            schoolData?.forEach((row: any) => {
-                const id = row.candidate_id;
-                const schoolName = row.schools?.name;
+            schoolData?.forEach((row) => {
+                const rec = asRecord(row);
+                const id = String(rec.candidate_id ?? '');
+                const schoolName = String(asRecord(rec.schools).name ?? '');
                 if (schoolName) {
                     if (!schoolMap.has(id)) schoolMap.set(id, []);
                     schoolMap.get(id)!.push(schoolName);
@@ -164,6 +172,7 @@ export const useAllSupabaseCandidates = (options: AllCandidatesOptions = {}) => 
                 const companies = companyMap.get(c.id) || [];
                 const schools = schoolMap.get(c.id) || [];
                 const metadata = c.metadata || {};
+                const metadataRecord = asRecord(metadata);
 
                 return {
                     id: c.id,
@@ -171,12 +180,12 @@ export const useAllSupabaseCandidates = (options: AllCandidatesOptions = {}) => 
                     email: c.email,
                     type: 'uploaded' as const,
                     skills: c.skills,
-                    role: metadata.role || metadata.title || 'Candidate',
-                    location: metadata.location || '',
-                    experienceYears: metadata.experienceYears || metadata.experience || 0,
+                    role: String(metadataRecord.role || metadataRecord.title || 'Candidate'),
+                    location: String(metadataRecord.location || ''),
+                    experienceYears: Number(metadataRecord.experienceYears || metadataRecord.experience || 0),
                     companies,
                     schools,
-                    metadata,
+                    metadata: metadataRecord,
                     matchScores: {},
                     feedback: {}
                 } as Candidate;

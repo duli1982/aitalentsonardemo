@@ -42,6 +42,10 @@ function createResult(): ValidationResult {
   return { valid: true, modified: false, issues: [] };
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+}
+
 function addIssue(result: ValidationResult, issue: ValidationIssue) {
   result.issues.push(issue);
   if (issue.severity === 'critical') {
@@ -286,37 +290,40 @@ export function validateFitScore(data: {
 /**
  * Validate an evidence pack response.
  */
-export function validateEvidencePack(data: any): {
+export function validateEvidencePack(data: unknown): {
   confidence: number;
   validation: ValidationResult;
 } {
   const result = createResult();
+  const payload = asRecord(data);
 
-  const confidence = validateConfidence(data?.confidence, 'confidence', result);
+  const confidence = validateConfidence(payload.confidence, 'confidence', result);
 
   // Validate matchReasons text fields
-  if (Array.isArray(data?.matchReasons)) {
-    for (let i = 0; i < data.matchReasons.length; i++) {
-      const reason = data.matchReasons[i];
-      if (reason?.claim) {
+  if (Array.isArray(payload.matchReasons)) {
+    for (let i = 0; i < payload.matchReasons.length; i++) {
+      const reason = asRecord(payload.matchReasons[i]);
+      if (reason.claim) {
         validateTextField(reason.claim, `matchReasons[${i}].claim`, 500, result);
       }
-      if (reason?.snippet?.text) {
-        validateTextField(reason.snippet.text, `matchReasons[${i}].snippet.text`, 500, result);
+      const snippet = asRecord(reason.snippet);
+      if (snippet.text) {
+        validateTextField(snippet.text, `matchReasons[${i}].snippet.text`, 500, result);
       }
     }
   }
 
   // Validate risk statement
-  if (data?.risk?.statement) {
-    validateTextField(data.risk.statement, 'risk.statement', 1000, result);
+  const risk = asRecord(payload.risk);
+  if (risk['statement']) {
+    validateTextField(risk['statement'], 'risk.statement', 1000, result);
   }
-  if (data?.risk?.mitigation) {
-    validateTextField(data.risk.mitigation, 'risk.mitigation', 1000, result);
+  if (risk['mitigation']) {
+    validateTextField(risk['mitigation'], 'risk.mitigation', 1000, result);
   }
 
   // Check all text content for injection artifacts
-  const allText = JSON.stringify(data || {});
+  const allText = JSON.stringify(payload);
   checkOutputInjection(allText, result);
   checkPromptLeakage(allText, result);
 
@@ -333,10 +340,11 @@ export function validateEvidencePack(data: any): {
 /**
  * Validate parsed resume output.
  */
-export function validateParsedResume(data: any): {
+export function validateParsedResume(data: unknown): {
   validation: ValidationResult;
 } {
   const result = createResult();
+  const payload = asRecord(data);
 
   if (!data) {
     addIssue(result, {
@@ -349,7 +357,7 @@ export function validateParsedResume(data: any): {
   }
 
   // Name validation
-  const name = String(data.name ?? '').trim();
+  const name = String(payload.name ?? '').trim();
   if (!name) {
     addIssue(result, {
       code: 'MISSING_NAME',
@@ -362,17 +370,17 @@ export function validateParsedResume(data: any): {
   }
 
   // Skills validation
-  if (Array.isArray(data.skills)) {
-    if (data.skills.length > 100) {
+  if (Array.isArray(payload.skills)) {
+    if (payload.skills.length > 100) {
       addIssue(result, {
         code: 'EXCESSIVE_SKILLS',
         severity: 'warning',
-        message: `Parsed resume has ${data.skills.length} skills — suspiciously high count.`,
+        message: `Parsed resume has ${payload.skills.length} skills — suspiciously high count.`,
         field: 'skills'
       });
     }
     // Check each skill for injection artifacts
-    for (const skill of data.skills.slice(0, 50)) {
+    for (const skill of payload.skills.slice(0, 50)) {
       const s = String(skill);
       if (s.length > 100) {
         addIssue(result, {
@@ -386,13 +394,13 @@ export function validateParsedResume(data: any): {
   }
 
   // Summary leakage check
-  if (data.summary) {
-    validateTextField(data.summary, 'summary', 3000, result);
+  if (payload.summary) {
+    validateTextField(payload.summary, 'summary', 3000, result);
   }
 
   // Full output leakage check
-  checkPromptLeakage(JSON.stringify(data), result);
-  checkOutputInjection(JSON.stringify(data), result);
+  checkPromptLeakage(JSON.stringify(payload), result);
+  checkOutputInjection(JSON.stringify(payload), result);
 
   if (result.issues.length > 0) {
     console.warn(
@@ -409,7 +417,7 @@ export function validateParsedResume(data: any): {
  * Use this for any AI output that doesn't have a specialized validator.
  * Checks for prompt leakage and injection artifacts in the serialized output.
  */
-export function validateGenericOutput(data: any): ValidationResult {
+export function validateGenericOutput(data: unknown): ValidationResult {
   const result = createResult();
 
   if (data == null) {
@@ -439,31 +447,33 @@ export function validateGenericOutput(data: any): ValidationResult {
  * Validate a multi-dimensional fit analysis (from geminiService.analyzeFit).
  * Clamps all sub-scores and the top-level matchScore.
  */
-export function validateFitAnalysis(data: any): {
+export function validateFitAnalysis(data: unknown): {
   matchScore: number;
   validation: ValidationResult;
 } {
   const result = createResult();
+  const payload = asRecord(data);
 
-  const matchScore = validateScore(data?.matchScore, 'matchScore', 0, 100, result);
+  const matchScore = validateScore(payload.matchScore, 'matchScore', 0, 100, result);
 
   // Validate sub-dimension scores
-  const dimensions = data?.multiDimensionalAnalysis;
+  const dimensions = asRecord(payload.multiDimensionalAnalysis);
   if (dimensions && typeof dimensions === 'object') {
     for (const [key, value] of Object.entries(dimensions)) {
-      if (value && typeof value === 'object' && 'score' in (value as any)) {
-        validateScore((value as any).score, `multiDimensionalAnalysis.${key}.score`, 0, 100, result);
+      const dimension = asRecord(value);
+      if ('score' in dimension) {
+        validateScore(dimension.score, `multiDimensionalAnalysis.${key}.score`, 0, 100, result);
       }
     }
   }
 
   // Text field checks
-  if (data?.matchRationale) {
-    validateTextField(data.matchRationale, 'matchRationale', 3000, result);
+  if (payload.matchRationale) {
+    validateTextField(payload.matchRationale, 'matchRationale', 3000, result);
   }
 
   // Full output leakage check
-  const allText = JSON.stringify(data || {});
+  const allText = JSON.stringify(payload);
   checkPromptLeakage(allText, result);
   checkOutputInjection(allText, result);
 

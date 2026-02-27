@@ -1,7 +1,8 @@
 import React, { useEffect } from 'react';
 import { CheckCircle, AlertTriangle, X, Info } from 'lucide-react';
+import { TIMING } from '../../config/timing';
 
-export type ToastType = 'success' | 'error' | 'info';
+export type ToastType = 'success' | 'error' | 'info' | 'warning';
 
 export interface ToastProps {
     id: string;
@@ -11,7 +12,7 @@ export interface ToastProps {
     duration?: number;
 }
 
-const Toast: React.FC<ToastProps> = ({ id, type, message, onClose, duration = 5000 }) => {
+const Toast: React.FC<ToastProps> = ({ id, type, message, onClose, duration = TIMING.DEFAULT_TOAST_DURATION_MS }) => {
     useEffect(() => {
         const timer = setTimeout(() => {
             onClose(id);
@@ -23,13 +24,15 @@ const Toast: React.FC<ToastProps> = ({ id, type, message, onClose, duration = 50
     const icons = {
         success: <CheckCircle className="h-5 w-5 text-green-400" />,
         error: <AlertTriangle className="h-5 w-5 text-red-400" />,
-        info: <Info className="h-5 w-5 text-sky-400" />
+        info: <Info className="h-5 w-5 text-sky-400" />,
+        warning: <AlertTriangle className="h-5 w-5 text-amber-400" />
     };
 
     const bgColors = {
         success: "bg-slate-800 border-green-500/30",
         error: "bg-slate-800 border-red-500/30",
-        info: "bg-slate-800 border-sky-500/30"
+        info: "bg-slate-800 border-sky-500/30",
+        warning: "bg-slate-800 border-amber-500/30"
     };
 
     return (

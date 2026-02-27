@@ -283,7 +283,7 @@ class BulkIngestionService {
      * Ingest a single profile
      */
     private async ingestSingleProfile(profile: BulkProfile): Promise<void> {
-        const candidateId = (globalThis as any)?.crypto?.randomUUID?.() ?? crypto.randomUUID();
+        const candidateId = this.generateCandidateId();
 
         // Build content string
         const content = this.buildContentString(profile);
@@ -332,6 +332,14 @@ class BulkIngestionService {
             console.warn(`[BulkIngestion] Failed to create relationships for ${profile.name}:`, relationshipError);
             // Don't throw - profile was successfully created, just missing relationships
         }
+    }
+
+    private generateCandidateId(): string {
+        const maybeCrypto = globalThis.crypto as Crypto | undefined;
+        if (maybeCrypto?.randomUUID) {
+            return maybeCrypto.randomUUID();
+        }
+        return `bulk-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     }
 
     /**

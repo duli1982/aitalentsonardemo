@@ -4,6 +4,12 @@ import { supabase } from '../services/supabaseClient';
 import { Loader2, Database, CheckCircle, AlertCircle, Upload, ArrowRight } from 'lucide-react';
 import { migrateAllCandidates, checkMigrationStatus, MigrationProgress } from '../utils/migrateToVectorDB';
 
+type MigrationStatus = Awaited<ReturnType<typeof checkMigrationStatus>>;
+
+function generateCandidateId(): string {
+    return globalThis.crypto?.randomUUID?.() ?? `upl-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 const IngestControl: React.FC = () => {
     const [status, setStatus] = useState<'idle' | 'generating' | 'embedding' | 'uploading' | 'complete' | 'error'>('idle');
     const [log, setLog] = useState<string[]>([]);
@@ -12,7 +18,7 @@ const IngestControl: React.FC = () => {
     // Migration state
     const [isMigrating, setIsMigrating] = useState(false);
     const [migrationProgress, setMigrationProgress] = useState<MigrationProgress | null>(null);
-    const [migrationStatus, setMigrationStatus] = useState<{ total: number; migrated: number } | null>(null);
+    const [migrationStatus, setMigrationStatus] = useState<MigrationStatus | null>(null);
 
     const addLog = (msg: string) => setLog(prev => [...prev, `${new Date().toLocaleTimeString()} - ${msg}`]);
 
@@ -67,13 +73,17 @@ const IngestControl: React.FC = () => {
 
                 // 2. Generate Embedding
                 const embeddingRes = await aiService.embedText(c.summary);
-                if (!embeddingRes.success || !embeddingRes.data) {
+                if (!embeddingRes.success) {
                     addLog(`Failed to embed ${c.name}: ${embeddingRes.error.message}`);
+                    continue;
+                }
+                if (!embeddingRes.data) {
+                    addLog(`Failed to embed ${c.name}: empty embedding response`);
                     continue;
                 }
 
                 // 3. Upload to Supabase
-                const candidateId = (globalThis as any)?.crypto?.randomUUID?.() ?? crypto.randomUUID();
+                const candidateId = generateCandidateId();
                 const metadata = { id: candidateId, role: c.role, name: c.name, type: 'uploaded', source: 'demo_ingest' };
 
                 // Best-effort: populate candidates + active document if the new schema is deployed.
@@ -95,6 +105,11 @@ const IngestControl: React.FC = () => {
                     continue;
                 } catch {
                     // Fallback to legacy insert below.
+                }
+
+                if (!supabase) {
+                    addLog(`Supabase Error (${c.name}): Supabase is not configured.`);
+                    continue;
                 }
 
                 const { error } = await supabase
@@ -188,13 +203,13 @@ const IngestControl: React.FC = () => {
                     <div className="flex items-center space-x-3 text-sm">
                         <div className="flex-1">
                             <div className="flex justify-between text-slate-400 mb-1">
-                                <span>{migrationStatus.migrated} of {migrationStatus.totalMockCandidates} migrated</span>
-                                <span>{Math.round((migrationStatus.migrated / migrationStatus.totalMockCandidates) * 100)}%</span>
+                                <span>{migrationStatus.migratedCount} of {migrationStatus.totalMockCandidates} migrated</span>
+                                <span>{Math.round((migrationStatus.migratedCount / migrationStatus.totalMockCandidates) * 100)}%</span>
                             </div>
                             <div className="w-full bg-slate-800 rounded-full h-2">
                                 <div
                                     className="bg-gradient-to-r from-purple-600 to-pink-600 h-2 rounded-full transition-all"
-                                    style={{ width: `${(migrationStatus.migrated / migrationStatus.totalMockCandidates) * 100}%` }}
+                                    style={{ width: `${(migrationStatus.migratedCount / migrationStatus.totalMockCandidates) * 100}%` }}
                                 />
                             </div>
                         </div>

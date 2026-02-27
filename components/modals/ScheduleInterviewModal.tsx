@@ -3,6 +3,7 @@ import { Calendar, Check, Clock, Copy, Loader2, TrendingUp, X } from 'lucide-rea
 import type { Candidate, Job } from '../../types';
 import { autonomousSchedulingAgent, type MeetingProvider } from '../../services/AutonomousSchedulingAgent';
 import { useToast } from '../../contexts/ToastContext';
+import { TIMING } from '../../config/timing';
 
 type UrgencyLevel = 'low' | 'medium' | 'high';
 
@@ -85,7 +86,7 @@ const ScheduleInterviewModal: React.FC<ScheduleInterviewModalProps> = ({ isOpen,
         const text = `Interview Invitation - ${job.title}\n\nCandidate: ${candidate.name}\nDate: ${formatted.date}\nTime: ${formatted.time} (${slot.timezone})\n\nPlease confirm your availability.`;
         navigator.clipboard.writeText(text);
         setCopiedSlot(index);
-        setTimeout(() => setCopiedSlot(null), 2000);
+        setTimeout(() => setCopiedSlot(null), TIMING.CLIPBOARD_COPY_RESET_MS);
     };
 
     const getUrgencyColor = (level: UrgencyLevel) => {

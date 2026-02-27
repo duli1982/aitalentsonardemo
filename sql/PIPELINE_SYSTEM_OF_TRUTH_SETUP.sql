@@ -97,62 +97,60 @@ CREATE POLICY "rubrics_authenticated_all"
 ON rubrics
 FOR ALL
 TO authenticated
-USING (true)
-WITH CHECK (true);
+USING (auth.role() = 'authenticated')
+WITH CHECK (auth.role() = 'authenticated');
 
 DROP POLICY IF EXISTS "rubric_versions_authenticated_all" ON rubric_versions;
 CREATE POLICY "rubric_versions_authenticated_all"
 ON rubric_versions
 FOR ALL
 TO authenticated
-USING (true)
-WITH CHECK (true);
+USING (auth.role() = 'authenticated')
+WITH CHECK (auth.role() = 'authenticated');
 
 DROP POLICY IF EXISTS "decision_artifacts_authenticated_all" ON decision_artifacts;
 CREATE POLICY "decision_artifacts_authenticated_all"
 ON decision_artifacts
 FOR ALL
 TO authenticated
-USING (true)
-WITH CHECK (true);
+USING (auth.role() = 'authenticated')
+WITH CHECK (auth.role() = 'authenticated');
 
 DROP POLICY IF EXISTS "pipeline_events_authenticated_all" ON pipeline_events;
 CREATE POLICY "pipeline_events_authenticated_all"
 ON pipeline_events
 FOR ALL
 TO authenticated
-USING (true)
-WITH CHECK (true);
+USING (auth.role() = 'authenticated')
+WITH CHECK (auth.role() = 'authenticated');
 
--- Anon access (useful for local/demo apps using the public anon key)
--- If you don't want anon to write in production, remove the anon policies below.
+-- Optional for local/demo only:
 DROP POLICY IF EXISTS "rubrics_anon_read" ON rubrics;
-CREATE POLICY "rubrics_anon_read"
-ON rubrics
-FOR SELECT
-TO anon
-USING (true);
+-- CREATE POLICY "rubrics_anon_read"
+-- ON rubrics
+-- FOR SELECT
+-- TO anon
+-- USING (true);
 
 DROP POLICY IF EXISTS "rubric_versions_anon_read" ON rubric_versions;
-CREATE POLICY "rubric_versions_anon_read"
-ON rubric_versions
-FOR SELECT
-TO anon
-USING (true);
+-- CREATE POLICY "rubric_versions_anon_read"
+-- ON rubric_versions
+-- FOR SELECT
+-- TO anon
+-- USING (true);
 
 DROP POLICY IF EXISTS "decision_artifacts_anon_all" ON decision_artifacts;
-CREATE POLICY "decision_artifacts_anon_all"
-ON decision_artifacts
-FOR ALL
-TO anon
-USING (true)
-WITH CHECK (true);
+-- CREATE POLICY "decision_artifacts_anon_all"
+-- ON decision_artifacts
+-- FOR ALL
+-- TO anon
+-- USING (true)
+-- WITH CHECK (true);
 
 DROP POLICY IF EXISTS "pipeline_events_anon_all" ON pipeline_events;
-CREATE POLICY "pipeline_events_anon_all"
-ON pipeline_events
-FOR ALL
-TO anon
-USING (true)
-WITH CHECK (true);
-
+-- CREATE POLICY "pipeline_events_anon_all"
+-- ON pipeline_events
+-- FOR ALL
+-- TO anon
+-- USING (true)
+-- WITH CHECK (true);

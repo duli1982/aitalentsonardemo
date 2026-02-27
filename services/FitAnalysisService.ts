@@ -51,8 +51,8 @@ function computeHeuristicFit(job: Job, candidate: Candidate, semanticScore?: num
   const skillScore = jobSkills.length ? (matchedSkills.length / jobSkills.length) * 70 : 0;
   const semanticBoost = typeof semanticScore === 'number' ? clamp(semanticScore, 0, 100) * 0.25 : 0;
   const expBoost =
-    typeof (candidate as any).experienceYears === 'number'
-      ? clamp((candidate as any).experienceYears * 2, 0, 10)
+    typeof candidate.experienceYears === 'number'
+      ? clamp(candidate.experienceYears * 2, 0, 10)
       : typeof candidate.experience === 'number'
         ? clamp(candidate.experience * 2, 0, 10)
         : 0;
@@ -71,12 +71,12 @@ function computeHeuristicFit(job: Job, candidate: Candidate, semanticScore?: num
 }
 
 function getCandidateSummary(candidate: Candidate): string {
-  const summary = String((candidate as any).summary || (candidate as any).notes || '').trim();
+  const summary = String(candidate.summary || candidate.notes || '').trim();
   return summary.slice(0, 800);
 }
 
 function getCandidateExperience(candidate: Candidate): number {
-  const exp = (candidate as any).experienceYears ?? candidate.experience ?? 0;
+  const exp = candidate.experienceYears ?? candidate.experience ?? 0;
   return typeof exp === 'number' ? exp : 0;
 }
 
@@ -177,4 +177,3 @@ Return ONLY valid JSON:
 }
 
 export const fitAnalysisService = new FitAnalysisService();
-

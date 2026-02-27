@@ -26,12 +26,16 @@ const InterviewNotesSummarizerModal: React.FC<InterviewNotesSummarizerModalProps
 
         setIsSummarizing(true);
         try {
-            const result = await geminiService.summarizeInterviewNotes(
+            const response = await geminiService.summarizeInterviewNotesResult(
                 rawNotes,
                 candidate.name,
                 job.title,
                 interviewer
             );
+            if (!response.success && 'error' in response) {
+                throw new Error(response.error.message);
+            }
+            const result = response.data;
             setSummary(result);
         } catch (error) {
             console.error('Error summarizing notes:', error);

@@ -1,6 +1,7 @@
 // ErrorService - Centralized error handling, logging, and retry logic
 
-import { AppError, NetworkError } from '../types/errors';
+import type { AppError } from '../types/errors';
+import { NetworkError } from '../types/errors';
 
 interface ErrorLog {
     id: string;
@@ -27,6 +28,10 @@ class ErrorService {
     private logs: ErrorLog[] = [];
     private subscribers: Set<(error: AppError | Error) => void> = new Set();
 
+    private isAppError(error: unknown): error is AppError {
+        return !!error && typeof error === 'object' && 'code' in error && 'message' in error;
+    }
+
     // Log an error
     log(error: Error, handled: boolean = false): string {
         const logEntry: ErrorLog = {
@@ -44,7 +49,7 @@ class ErrorService {
         }
 
         // Console logging based on error type
-        if (error instanceof AppError && error.isOperational) {
+        if (this.isAppError(error)) {
             console.warn(`[${error.code}] ${error.message}`, error.context);
         } else {
             console.error('[CRITICAL]', error);
@@ -115,7 +120,7 @@ class ErrorService {
         try {
             return await fn();
         } catch (error) {
-            this.log(error as Error, true);
+            this.log(error instanceof Error ? error : new Error(String(error)), true);
             return fallback;
         }
     }

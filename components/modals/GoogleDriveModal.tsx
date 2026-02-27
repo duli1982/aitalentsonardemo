@@ -3,6 +3,7 @@ import { useGoogleLogin } from '@react-oauth/google';
 import type { UploadedCandidate } from '../../types';
 import { X, Cloud, FolderOpen, RefreshCw, CheckCircle, AlertCircle, Loader2, FileText } from 'lucide-react';
 import * as driveService from '../../services/googleDriveService';
+import { TIMING } from '../../config/timing';
 
 interface GoogleDriveModalProps {
   onClose: () => void;
@@ -70,7 +71,7 @@ const GoogleDriveModal: React.FC<GoogleDriveModalProps> = ({ onClose, onImportCa
 
   const handleDisconnect = () => {
     driveService.disconnectDrive();
-    setConnectionStatus({ isConnected: false });
+    setConnectionStatus({ isConnected: false, mode: driveMode });
     setScanStatus('idle');
     setImportedCount(0);
   };
@@ -106,7 +107,7 @@ const GoogleDriveModal: React.FC<GoogleDriveModalProps> = ({ onClose, onImportCa
       // Auto-close after 3 seconds (increased to show duplicate info)
       setTimeout(() => {
         onClose();
-      }, 3000);
+      }, TIMING.GOOGLE_DRIVE_MODAL_CLOSE_DELAY_MS);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to scan Google Drive folder');
       setScanStatus('error');

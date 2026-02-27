@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Search, User, Sparkles, Loader2 } from 'lucide-react';
-import { parseCandidateQuery, FilterCriteria } from '../../services/geminiService';
+import { parseCandidateQueryResult, FilterCriteria } from '../../services/geminiService';
 
 interface CandidateFiltersProps {
     searchTerm: string;
@@ -32,7 +32,11 @@ const CandidateFilters: React.FC<CandidateFiltersProps> = ({
 
         setIsAiLoading(true);
         try {
-            const criteria = await parseCandidateQuery(aiQuery);
+            const result = await parseCandidateQueryResult(aiQuery);
+            if (!result.success && 'error' in result) {
+                throw new Error(result.error.message);
+            }
+            const criteria = result.data;
             if (onAiFilterUpdate) {
                 onAiFilterUpdate(criteria);
             }

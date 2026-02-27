@@ -33,6 +33,14 @@ interface ParsedResume {
 
 type AIResponse<T> = Result<T>;
 
+function asRecord(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+}
+
+function asArray(value: unknown): unknown[] {
+    return Array.isArray(value) ? value : [];
+}
+
 const RATE_LIMIT_TOKENS = 20;
 const TOKEN_REFRESH_MS = 60 * 1000;
 
@@ -228,11 +236,12 @@ class AIService {
     }
 
     private parseRetryAfterMs(error: unknown): number | null {
-        const asAny = error as any;
+        const errorRecord = asRecord(error);
+        const errorNested = asRecord(errorRecord.error);
         const raw =
-            (typeof asAny?.message === 'string' && asAny.message) ||
-            (typeof asAny === 'string' && asAny) ||
-            JSON.stringify(asAny);
+            (typeof errorRecord.message === 'string' && errorRecord.message) ||
+            (typeof error === 'string' && error) ||
+            JSON.stringify(errorRecord);
 
         const retryDelayMatch = raw.match(/\"retryDelay\"\\s*:\\s*\"([0-9.]+)s\"/i);
         if (retryDelayMatch) {
@@ -247,8 +256,9 @@ class AIService {
         }
 
         // Some ApiError objects include retry info in details
-        const retryInfo = asAny?.error?.details?.find?.((d: any) => String(d?.['@type'] || '').includes('RetryInfo'));
-        const retryDelay = retryInfo?.retryDelay;
+        const details = asArray(errorNested.details);
+        const retryInfo = details.find((detail) => String(asRecord(detail)['@type'] || '').includes('RetryInfo'));
+        const retryDelay = asRecord(retryInfo).retryDelay;
         if (typeof retryDelay === 'string') {
             const seconds = Number(retryDelay.replace('s', ''));
             if (Number.isFinite(seconds)) return Math.max(1000, Math.round(seconds * 1000));
@@ -258,9 +268,10 @@ class AIService {
     }
 
     private handleRateLimit(error: unknown): { retryAfterMs: number; message: string } | null {
-        const asAny = error as any;
-        const code = asAny?.status || asAny?.code || asAny?.error?.code;
-        const rawMessage = String(asAny?.message || asAny?.error?.message || error);
+        const errorRecord = asRecord(error);
+        const errorNested = asRecord(errorRecord.error);
+        const code = errorRecord.status || errorRecord.code || errorNested.code;
+        const rawMessage = String(errorRecord.message || errorNested.message || error);
         const isRateLimited = code === 429 || rawMessage.includes('RESOURCE_EXHAUSTED') || rawMessage.includes('429');
         if (!isRateLimited) return null;
 
@@ -373,8 +384,9 @@ Return a JSON object with: name, email (if found), phone (if found), skills[], e
      * is used (`responseMimeType: 'application/json'` + `responseSchema`), which
      * constrains the model to emit only valid JSON conforming to the schema.
      */
-    async generateText(prompt: string, options?: { schema?: any }): Promise<AIResponse<string>> {
-        if (!this.client) {
+    async generateText(prompt: string, options?: { schema?: unknown }): Promise<AIResponse<string>> {
+        const client = this.client;
+        if (!client) {
             return ok('(Mock) AI text generation is disabled. Set VITE_GEMINI_API_KEY for real output.');
         }
 
@@ -403,13 +415,13 @@ Return a JSON object with: name, email (if found), phone (if found), skills[], e
 
                 try {
                     // Layer 6: Build config with structured output schema when provided.
-                    const config: Record<string, any> = {};
+                    const config: Record<string, unknown> = {};
                     if (options?.schema) {
                         config.responseMimeType = 'application/json';
                         config.responseSchema = options.schema;
                     }
 
-                    const response = await this.client.models.generateContent({
+                    const response = await client.models.generateContent({
                         model,
                         contents: prompt,
                         ...(Object.keys(config).length > 0 ? { config } : {})
@@ -455,10 +467,13 @@ Return a JSON object with: name, email (if found), phone (if found), skills[], e
      * to guarantee well-formed JSON at the API level. When schema is absent, the
      * model response is best-effort parsed (markdown fences stripped).
      */
-    async generateJson<T>(prompt: string, schema?: any): Promise<AIResponse<T>> {
+    async generateJson<T>(prompt: string, schema?: unknown): Promise<AIResponse<T>> {
         const textResponse = await this.generateText(prompt, schema ? { schema } : undefined);
-        if (!textResponse.success || !textResponse.data) {
+        if (!textResponse.success) {
             return err(textResponse.error, { retryAfterMs: textResponse.retryAfterMs });
+        }
+        if (!textResponse.data) {
+            return err(this.unknownError('AI JSON response was empty.'));
         }
 
         try {
@@ -521,7 +536,8 @@ Return a JSON object with: name, email (if found), phone (if found), skills[], e
 
     // Generate text embedding for vector search
     async embedText(text: string): Promise<AIResponse<number[]>> {
-        if (!this.client) {
+        const client = this.client;
+        if (!client) {
             // Mock 768-dim vector
             const mockVector = Array(768).fill(0).map(() => Math.random() * 0.1);
             return ok(mockVector);
@@ -552,22 +568,29 @@ Return a JSON object with: name, email (if found), phone (if found), skills[], e
             }
 
             try {
-                const result = await this.client.models.embedContent({
+                const result = await client.models.embedContent({
                     model: 'text-embedding-004',
                     contents: text,
                 });
 
                 // Handle both potential response formats
-                const response = result as any;
-                const values = response.embeddings?.[0]?.values || response.embedding?.values;
+                const response = asRecord(result);
+                const embeddings = asArray(response.embeddings);
+                const values =
+                    asRecord(embeddings[0]).values ||
+                    asRecord(response.embedding).values;
 
-                if (!values) {
+                if (!Array.isArray(values)) {
                     throw new Error('No embedding returned from API');
                 }
 
-                this.embedCache.set(text, values);
-                this.embedLocalCache.set(key, values);
-                return ok(values);
+                const numericValues = values
+                    .map((value) => Number(value))
+                    .filter((value) => Number.isFinite(value));
+
+                this.embedCache.set(text, numericValues);
+                this.embedLocalCache.set(key, numericValues);
+                return ok(numericValues);
             } catch (error) {
                 const rate = this.handleRateLimit(error);
                 if (rate) {

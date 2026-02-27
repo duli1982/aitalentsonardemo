@@ -3,6 +3,7 @@ import { AlertTriangle, ChevronDown, Copy, X } from 'lucide-react';
 import { useDegradedMode } from '../contexts/DegradedModeContext';
 import { useToast } from '../contexts/ToastContext';
 import { getClientVersion } from '../utils/clientVersion';
+import { TIMING } from '../config/timing';
 
 function formatTime(iso?: string) {
   if (!iso) return 'Unknown';
@@ -57,7 +58,7 @@ const DegradedModeBanner: React.FC = () => {
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      setTimeout(() => setCopied(false), TIMING.DEGRADED_MODE_COPY_RESET_MS);
       showToast('Debug bundle copied to clipboard.', 'success');
     } catch {
       try {
@@ -80,7 +81,7 @@ const DegradedModeBanner: React.FC = () => {
         if (!ok) throw new Error('execCommand copy returned false');
 
         setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
+        setTimeout(() => setCopied(false), TIMING.DEGRADED_MODE_COPY_RESET_MS);
         showToast('Debug bundle copied to clipboard.', 'success');
       } catch {
         showToast('Could not copy debug bundle (clipboard blocked). Try again on https/localhost.', 'warning');

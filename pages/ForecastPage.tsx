@@ -5,6 +5,7 @@ import { demandForecastingService } from '../services/DemandForecastingService';
 import { ForecastChart } from '../components/charts';
 import { useData } from '../contexts/DataContext';
 import { TrendingUp, Calendar, MapPin, Layers, ArrowRight, UserPlus, AlertCircle, Loader2, Briefcase } from 'lucide-react';
+import { TIMING } from '../config/timing';
 
 type ForecastTemplateId = 'pharma' | 'staffing';
 
@@ -102,7 +103,7 @@ const ForecastPage: React.FC = () => {
             const data = demandForecastingService.runForecast(scenario);
             setResult(data);
             setIsLoading(false);
-        }, 800);
+        }, TIMING.FORECAST_SIMULATION_DELAY_MS);
     };
 
     const handleStartTalentPooling = (role: string) => {

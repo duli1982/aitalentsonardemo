@@ -3,6 +3,13 @@ import Busboy from 'busboy';
 import { extractTextFromFile } from './_lib/textExtract';
 import { GeminiResumeService } from './_lib/geminiResume';
 import { getSupabaseAdmin } from './_lib/supabaseAdmin';
+import { z } from 'zod';
+
+const uploadFileSchema = z.object({
+  buffer: z.instanceof(Buffer).refine((buffer) => buffer.length > 0, 'No file uploaded.'),
+  fileName: z.string().trim().min(1, 'fileName is required.').max(255, 'fileName is too long.'),
+  mimeType: z.string().trim().min(1, 'mimeType is required.').max(255, 'mimeType is too long.'),
+});
 
 type UploadResponse =
   | {
@@ -54,11 +61,16 @@ async function parseMultipart(req: IncomingMessage): Promise<{ buffer: Buffer; f
   });
 }
 
-export default async function handler(req: any, res: any) {
+export default async function handler(req: IncomingMessage, res: ServerResponse) {
   if (req.method !== 'POST') return send(res, 405, { ok: false, errorCode: 'METHOD_NOT_ALLOWED', message: 'POST only.' });
 
   try {
-    const { buffer, fileName, mimeType } = await parseMultipart(req);
+    const parsedUpload = uploadFileSchema.safeParse(await parseMultipart(req));
+    if (!parsedUpload.success) {
+      const message = parsedUpload.error.issues[0]?.message || 'Invalid upload payload.';
+      return send(res, 400, { ok: false, errorCode: 'VALIDATION', message });
+    }
+    const { buffer, fileName, mimeType } = parsedUpload.data;
     const extracted = await extractTextFromFile(buffer, mimeType, fileName);
 
     const supabase = getSupabaseAdmin();
@@ -138,8 +150,13 @@ export default async function handler(req: any, res: any) {
     const gemini = new GeminiResumeService();
     const parsed = await gemini.parseResume(extracted.text);
 
-    if (parsed.ok === false) {
-      const retryAfterMs = parsed.retryAfterMs;
+    if (!parsed.success && 'error' in parsed) {
+      if (parsed.error.code !== 'RATE_LIMITED') {
+        return send(res, 502, { ok: false, errorCode: 'UPSTREAM', message: parsed.error.message });
+      }
+
+      const retryAfterMs =
+        typeof parsed.error.details?.retryAfterMs === 'number' ? (parsed.error.details.retryAfterMs as number) : undefined;
       return send(res, 200, {
         ok: true,
         candidateId,
@@ -242,7 +259,8 @@ export default async function handler(req: any, res: any) {
       injectionWarning,
       hiddenTextWarning,
     });
-  } catch (error: any) {
-    return send(res, 500, { ok: false, errorCode: 'UPSTREAM', message: String(error?.message || error) });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return send(res, 500, { ok: false, errorCode: 'UPSTREAM', message });
   }
 }

@@ -13,6 +13,7 @@
 import type { UploadedCandidate, Job } from '../types';
 import mockCandidatesData from '../data/mockCandidates.json';
 import { fitAnalysisService } from './FitAnalysisService';
+import { TIMING } from '../config/timing';
 
 export interface DemoLoadProgress {
   current: number;
@@ -73,7 +74,9 @@ export const loadDemoCandidates = async (
     candidates.push(candidate);
 
     // Simulate processing time (50-150ms per candidate)
-    await new Promise(resolve => setTimeout(resolve, 50 + Math.random() * 100));
+    await new Promise(resolve =>
+      setTimeout(resolve, TIMING.DEMO_DB_CANDIDATE_MIN_DELAY_MS + Math.random() * TIMING.DEMO_DB_CANDIDATE_RANDOM_DELAY_MS)
+    );
   }
 
   return candidates;
@@ -322,7 +325,7 @@ export const scanDatabaseForMatches = async (
         }
 
         // Small delay to avoid API rate limits
-        await new Promise(resolve => setTimeout(resolve, 300));
+        await new Promise(resolve => setTimeout(resolve, TIMING.DEMO_DB_AI_RATE_LIMIT_DELAY_MS));
       } catch (error) {
         console.error(`Failed to AI analyze ${candidate.name}:`, error);
         // Fallback to quick score
@@ -357,7 +360,7 @@ export const scanDatabaseForMatches = async (
       }
 
       // Small delay for UI smoothness
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await new Promise(resolve => setTimeout(resolve, TIMING.DEMO_DB_UI_SMOOTHNESS_DELAY_MS));
     }
   }
 

@@ -12,7 +12,7 @@ export interface AgenticSearchResult {
     score: number;
     reasoning: string[];
     sources: string[]; // 'keyword', 'vector', 'graph'
-    fullCandidate?: any; // The original candidate object from the search tool
+    fullCandidate?: Record<string, unknown>; // The original candidate object from the search tool
 }
 
 export class AgenticSourcingPrototype {
@@ -68,7 +68,7 @@ export class AgenticSourcingPrototype {
             for (const c of vectorRes.data.results) {
                 // Vector scores are 0-1, we map to 0-100.
                 const score = Math.round((c.similarity || 0) * 100);
-                this.mergeResult(candidates, c.id, c.name, c.skills, c, score, `Vector similarity: ${score}%`, 'vector');
+                this.mergeResult(candidates, c.id, c.name, c.skills || [], c, score, `Vector similarity: ${score}%`, 'vector');
             }
         }
 
@@ -110,7 +110,7 @@ export class AgenticSourcingPrototype {
         id: string,
         name: string,
         skills: string[],
-        fullCandidate: any,
+        fullCandidate: Record<string, unknown>,
         score: number,
         reason: string,
         source: string

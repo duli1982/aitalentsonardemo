@@ -4,17 +4,21 @@ import { Result, ok, err } from '../types/result';
 import { upstream, notConfigured } from './errorHandling';
 import { semanticSearchService as vectorSearch } from './SemanticSearchService';
 
+function asRecord(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+}
+
 // --- Tool Interfaces ---
 
 export interface SearchToolParams {
     query: string;
     limit?: number;
-    filters?: Record<string, any>;
+    filters?: Record<string, unknown>;
 }
 
 export interface SearchToolResult<T> {
     results: T[];
-    metadata?: any;
+    metadata?: Record<string, unknown>;
     toolName: string;
 }
 
@@ -31,11 +35,26 @@ export interface SearchTool<TParams, TResult> {
  * Uses Supabase text search for exact matches.
  * Good for: "Python", "San Francisco", specific company names.
  */
-export class KeywordSearchTool implements SearchTool<SearchToolParams, any> {
+type CandidateSearchRecord = Record<string, unknown> & {
+    id: string;
+    name: string;
+    role?: string;
+    title?: string;
+    similarity?: number;
+    skills?: string[];
+    contentSnippet?: string;
+};
+
+type CandidateDocumentRow = {
+    metadata?: unknown;
+    content?: string | null;
+};
+
+export class KeywordSearchTool implements SearchTool<SearchToolParams, CandidateSearchRecord> {
     name = "keyword_search";
     description = "Search for candidates containing exact keywords (high precision, low recall). Use for specific skills, companies, or titles.";
 
-    async execute(params: SearchToolParams): Promise<Result<SearchToolResult<any>>> {
+    async execute(params: SearchToolParams): Promise<Result<SearchToolResult<CandidateSearchRecord>>> {
         if (!supabase) {
             return err(notConfigured('KeywordSearchTool', 'Supabase is not configured.'));
         }
@@ -57,10 +76,21 @@ export class KeywordSearchTool implements SearchTool<SearchToolParams, any> {
                 return err(upstream('KeywordSearchTool', `Supabase text search failed: ${error.message}`, error));
             }
 
-            const results = (data || []).map((row: any) => ({
-                ...row.metadata,
-                contentSnippet: row.content?.slice(0, 200) + '...'
-            }));
+            const rows = (data || []) as CandidateDocumentRow[];
+            const results = rows.map((row) => {
+                const metadata = asRecord(row.metadata);
+                const id = typeof metadata.id === 'string' ? metadata.id : '';
+                const name = typeof metadata.name === 'string' ? metadata.name : 'Unknown';
+                const contentSnippet = typeof row.content === 'string'
+                    ? `${row.content.slice(0, 200)}...`
+                    : undefined;
+                return {
+                    ...metadata,
+                    id,
+                    name,
+                    contentSnippet
+                } as CandidateSearchRecord;
+            });
 
             return ok({
                 results,
@@ -79,11 +109,11 @@ export class KeywordSearchTool implements SearchTool<SearchToolParams, any> {
  * Uses existing RAG vectors.
  * Good for: Concepts, "leadership", "fast learner", soft skills.
  */
-export class VectorSearchTool implements SearchTool<SearchToolParams, any> {
+export class VectorSearchTool implements SearchTool<SearchToolParams, CandidateSearchRecord> {
     name = "vector_search";
     description = "Search for candidates by meaning/concept (high recall). Use for role descriptions, soft skills, or broad queries.";
 
-    async execute(params: SearchToolParams): Promise<Result<SearchToolResult<any>>> {
+    async execute(params: SearchToolParams): Promise<Result<SearchToolResult<CandidateSearchRecord>>> {
         const res = await vectorSearch.search(params.query, { limit: params.limit || 10 });
 
         if (!res.success) {
@@ -96,7 +126,9 @@ export class VectorSearchTool implements SearchTool<SearchToolParams, any> {
                 name: c.name,
                 similarity: c.similarity,
                 skills: c.skills,
-                role: c.metadata?.role || c.metadata?.title
+                role: typeof c.metadata?.role === 'string'
+                    ? c.metadata.role
+                    : (typeof c.metadata?.title === 'string' ? c.metadata.title : undefined)
             })),
             toolName: this.name
         });
@@ -108,11 +140,16 @@ export class VectorSearchTool implements SearchTool<SearchToolParams, any> {
  * Fetches full details for a specific ID.
  * Used when the agent says "I found a match, let me verify their experience."
  */
-export class CandidateReaderTool implements SearchTool<{ candidateId: string }, any> {
+type CandidateReadRecord = {
+    content: string | null;
+    metadata: Record<string, unknown>;
+};
+
+export class CandidateReaderTool implements SearchTool<{ candidateId: string }, CandidateReadRecord> {
     name = "candidate_reader";
     description = "Read the full profile and resume of a specific candidate. Use this to verify details found in search.";
 
-    async execute(params: { candidateId: string }): Promise<Result<SearchToolResult<any>>> {
+    async execute(params: { candidateId: string }): Promise<Result<SearchToolResult<CandidateReadRecord>>> {
         if (!supabase) {
             return err(notConfigured('CandidateReaderTool', 'Supabase is not configured.'));
         }
@@ -127,8 +164,13 @@ export class CandidateReaderTool implements SearchTool<{ candidateId: string }, 
             return err(upstream('CandidateReaderTool', `Failed to read candidate: ${error.message}`, error));
         }
 
+        const result: CandidateReadRecord = {
+            content: typeof data.content === 'string' ? data.content : null,
+            metadata: asRecord(data.metadata)
+        };
+
         return ok({
-            results: [data],
+            results: [result],
             toolName: this.name
         });
     }
@@ -139,11 +181,17 @@ export class CandidateReaderTool implements SearchTool<{ candidateId: string }, 
  * Verifies if a candidate's claims align with other candidates from the same company.
  * e.g. "Candidate claims to be Senior at Netflix." -> "Do other Netflix Seniors list similar skills?"
  */
-export class FactCheckerTool implements SearchTool<{ company: string; role?: string }, any> {
+type FactCheckRecord = {
+    name: string;
+    title: string;
+    context: string;
+};
+
+export class FactCheckerTool implements SearchTool<{ company: string; role?: string }, FactCheckRecord> {
     name = "fact_checker";
     description = "Verify a candidate's background by comparing them to peers from the same company in the database.";
 
-    async execute(params: { company: string; role?: string }): Promise<Result<SearchToolResult<any>>> {
+    async execute(params: { company: string; role?: string }): Promise<Result<SearchToolResult<FactCheckRecord>>> {
         // 1. Find peers from the same company
         // In a real app, we'd also filter by 'role' fuzzy match, but for now we look at the whole company cohort.
         const res = await import('./GraphQueryService').then(m => m.graphQueryService.findCandidatesByCompany(params.company));
@@ -184,11 +232,16 @@ export class FactCheckerTool implements SearchTool<{ company: string; role?: str
  * Tool 5: Outreach Performance
  * Finds successful outreach examples (replies/meetings) for similar candidates.
  */
-export class OutreachPerformanceTool implements SearchTool<{ skills: string[]; role?: string }, any> {
+type OutreachExample = {
+    subject: string;
+    tags: string[];
+};
+
+export class OutreachPerformanceTool implements SearchTool<{ skills: string[]; role?: string }, OutreachExample> {
     name = "outreach_performance";
     description = "Find subject lines and messages that received replies from candidates with similar skills.";
 
-    async execute(params: { skills: string[]; role?: string }): Promise<Result<SearchToolResult<any>>> {
+    async execute(params: { skills: string[]; role?: string }): Promise<Result<SearchToolResult<OutreachExample>>> {
         // In a real implementation:
         // 1. Query pipeline_events for event_type = 'CANDIDATE_REPLIED'
         // 2. Join with candidate_skills to filter by params.skills overlap

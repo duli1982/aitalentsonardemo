@@ -20,7 +20,6 @@ interface JobsPageProps {
     handleFeedback: (candidateId: string, jobId: string, feedback: 'positive' | 'negative') => void;
     handleBatchAnalysis: (candidates: Candidate[]) => void;
     handleViewProfile: (candidate: Candidate) => void;
-    handleOpenCandidateJobDrawer: (candidate: Candidate, job: Job) => void;
     handleAddCandidateToPipeline: (candidate: Candidate, jobId: string) => void;
     isLoading: boolean;
     loadingCandidateId: string | null;
@@ -44,7 +43,6 @@ const JobsPage: React.FC<JobsPageProps> = ({
     handleFeedback,
     handleBatchAnalysis,
     handleViewProfile,
-    handleOpenCandidateJobDrawer,
     handleAddCandidateToPipeline,
     isLoading,
     loadingCandidateId,
@@ -189,7 +187,6 @@ const JobsPage: React.FC<JobsPageProps> = ({
                                 onAddToPipeline={handleAddCandidateToPipeline}
                                 onBatchAnalysis={handleBatchAnalysis}
                                 onViewProfile={handleViewProfile}
-                                onOpenCandidateJobDrawer={handleOpenCandidateJobDrawer}
                                 isLoading={isLoading}
                                 loadingCandidateId={loadingCandidateId}
                                 isBatchAnalyzing={isBatchAnalyzing}

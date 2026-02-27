@@ -8,7 +8,8 @@ export interface AgentEventPayload {
     message: string;
     severity?: AgentEventSeverity | string;
     title?: string;
-    metadata?: Record<string, any>;
+    icon?: string;
+    metadata?: Record<string, unknown>;
 }
 
 export class PulseService {

@@ -2,7 +2,7 @@ import React from 'react';
 import { Briefcase, Plus, Search, ChevronDown } from 'lucide-react';
 import JobListItem from '../components/JobListItem';
 import PipelineView from '../components/PipelineView';
-import { Candidate, Job, PipelineStage } from '../types';
+import { Job, PipelineStage } from '../types';
 
 interface PipelinePageProps {
     jobs: Job[];
@@ -15,7 +15,6 @@ interface PipelinePageProps {
     setStatusFilter: (status: Job['status'] | 'all') => void;
     setAddJobModalOpen: (open: boolean) => void;
     handleUpdateCandidateStage: (candidateId: string, jobId: string, newStage: PipelineStage) => void;
-    onOpenCandidateJobDrawer: (candidate: Candidate, job: Job) => void;
 }
 
 const PipelinePage: React.FC<PipelinePageProps> = ({
@@ -28,8 +27,7 @@ const PipelinePage: React.FC<PipelinePageProps> = ({
     statusFilter,
     setStatusFilter,
     setAddJobModalOpen,
-    handleUpdateCandidateStage,
-    onOpenCandidateJobDrawer
+    handleUpdateCandidateStage
 }) => {
 
     return (
@@ -83,7 +81,6 @@ const PipelinePage: React.FC<PipelinePageProps> = ({
                 <PipelineView
                     job={jobs.find(j => j.id === selectedJobId)}
                     onUpdateCandidateStage={handleUpdateCandidateStage}
-                    onOpenCandidateJobDrawer={onOpenCandidateJobDrawer}
                 />
             </div>
         </div>

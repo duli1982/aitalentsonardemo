@@ -10,6 +10,7 @@ import { supabase } from './supabaseClient';
 import { aiService } from './AIService';
 import type { AgentMode } from './AgentSettingsService';
 import { sanitizeForPrompt, buildSecurePrompt } from '../utils/promptSecurity';
+import type { Candidate, Job } from '../types';
 
 export type AnalyticsAlertSeverity = 'info' | 'warning' | 'error';
 
@@ -19,7 +20,7 @@ export interface AnalyticsAlert {
     title: string;
     message: string;
     createdAt: string;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
 }
 
 export interface PipelineSnapshot {
@@ -58,7 +59,7 @@ function stageKey(raw: unknown): string {
     return value;
 }
 
-function countByStageForJob(candidates: any[], jobId: string): Record<string, number> {
+function countByStageForJob(candidates: Candidate[], jobId: string): Record<string, number> {
     const counts: Record<string, number> = {};
 
     for (const candidate of candidates) {
@@ -72,7 +73,7 @@ function countByStageForJob(candidates: any[], jobId: string): Record<string, nu
     return counts;
 }
 
-function countByStageOverall(candidates: any[], jobs: any[]): { total: number; stageCounts: Record<string, number>; jobStageCounts: Record<string, Record<string, number>> } {
+function countByStageOverall(candidates: Candidate[], jobs: Job[]): { total: number; stageCounts: Record<string, number>; jobStageCounts: Record<string, Record<string, number>> } {
     const jobStageCounts: Record<string, Record<string, number>> = {};
     const stageCounts: Record<string, number> = {};
 
@@ -96,7 +97,7 @@ class AutonomousAnalyticsAgent {
     private isInitialized = false;
     private mode: AgentMode = 'recommend';
 
-    initialize(jobs: any[], candidates: any[], options?: { enabled?: boolean; mode?: AgentMode }) {
+    initialize(jobs: Job[], candidates: Candidate[], options?: { enabled?: boolean; mode?: AgentMode }) {
         if (this.isInitialized) return;
         this.mode = options?.mode ?? 'recommend';
 
@@ -192,6 +193,7 @@ class AutonomousAnalyticsAgent {
     }
 
     private async fetchSupabaseCandidateCount(): Promise<number | null> {
+        if (!supabase) return null;
         try {
             const result = await supabase
                 .from('candidate_documents')
@@ -204,7 +206,7 @@ class AutonomousAnalyticsAgent {
         }
     }
 
-    private async runAnalysis(jobs: any[], candidates: any[], opts?: { manual?: boolean }) {
+    private async runAnalysis(jobs: Job[], candidates: Candidate[], opts?: { manual?: boolean }) {
         const openJobs = jobs.filter((j) => (j?.status || '').toLowerCase() === 'open' || (j?.status || '').toLowerCase() === 'active');
 
         const pipeline = countByStageOverall(candidates, openJobs);
@@ -312,12 +314,14 @@ class AutonomousAnalyticsAgent {
             };
 
             const result = await aiService.generateJson<{ insight: string; recommendation: string }>(prompt, analyticsSchema);
-            if (!result?.insight || !result?.recommendation) return;
+            if (!result.success || !result.data) return;
+            const { insight, recommendation } = result.data;
+            if (!insight || !recommendation) return;
 
             this.emitAlert({
                 severity: 'info',
                 title: 'AI Insight',
-                message: `${result.insight} Recommendation: ${result.recommendation}`,
+                message: `${insight} Recommendation: ${recommendation}`,
                 metadata: { snapshotId: snapshot.id }
             });
         } catch {

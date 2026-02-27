@@ -17,7 +17,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 -- 1) Intake call sessions
 CREATE TABLE IF NOT EXISTS public.intake_call_sessions (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  job_id         TEXT REFERENCES public.jobs(id) ON DELETE CASCADE,
+  job_id         TEXT,
   job_title      TEXT,
   participants   JSONB NOT NULL DEFAULT '[]'::jsonb,
   transcript     JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -40,7 +40,7 @@ CREATE INDEX IF NOT EXISTS idx_intake_sessions_job_status ON public.intake_call_
 CREATE TABLE IF NOT EXISTS public.intake_scorecards (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   session_id     UUID REFERENCES public.intake_call_sessions(id) ON DELETE CASCADE,
-  job_id         TEXT REFERENCES public.jobs(id) ON DELETE CASCADE,
+  job_id         TEXT,
   summary        TEXT,
   must_have      JSONB NOT NULL DEFAULT '[]'::jsonb,
   nice_to_have   JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -66,6 +66,34 @@ CREATE INDEX IF NOT EXISTS idx_intake_scorecards_status ON public.intake_scoreca
 CREATE INDEX IF NOT EXISTS idx_intake_scorecards_session ON public.intake_scorecards(session_id);
 CREATE INDEX IF NOT EXISTS idx_intake_scorecards_job_status ON public.intake_scorecards(job_id, status);
 CREATE INDEX IF NOT EXISTS idx_intake_scorecards_approved_at ON public.intake_scorecards(approved_at DESC) WHERE status = 'approved';
+
+-- Add/refresh job_id FKs only when jobs.id is TEXT-compatible.
+DO $$
+BEGIN
+  ALTER TABLE public.intake_call_sessions
+    DROP CONSTRAINT IF EXISTS intake_call_sessions_job_id_fkey;
+  ALTER TABLE public.intake_scorecards
+    DROP CONSTRAINT IF EXISTS intake_scorecards_job_id_fkey;
+
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'jobs'
+      AND column_name = 'id'
+      AND data_type = 'text'
+  ) THEN
+    ALTER TABLE public.intake_call_sessions
+      ADD CONSTRAINT intake_call_sessions_job_id_fkey
+      FOREIGN KEY (job_id) REFERENCES public.jobs(id) ON DELETE CASCADE;
+
+    ALTER TABLE public.intake_scorecards
+      ADD CONSTRAINT intake_scorecards_job_id_fkey
+      FOREIGN KEY (job_id) REFERENCES public.jobs(id) ON DELETE CASCADE;
+  ELSE
+    RAISE NOTICE 'Skipping intake job_id FKs: public.jobs.id is not TEXT yet (run APPLY_APP_ID_COMPATIBILITY.sql first).';
+  END IF;
+END $$;
 
 -- 2.1) Backfill/sanitize rows for existing deployments before stricter uniqueness/indexing
 ALTER TABLE public.intake_call_sessions

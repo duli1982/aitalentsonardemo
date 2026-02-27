@@ -262,14 +262,22 @@ const SmartSearchModal: React.FC<SmartSearchModalProps> = ({
                                         </div>
                                     )}
 
-                                    {result.metadata?.experienceYears !== undefined && (
-                                        <div className="flex items-center space-x-4 text-sm text-slate-400">
-                                            <div className="flex items-center space-x-1">
-                                                <Briefcase className="h-4 w-4" />
-                                                <span>{result.metadata.experienceYears} years experience</span>
+                                    {(() => {
+                                        const rawYears = result.metadata?.experienceYears;
+                                        const years =
+                                            typeof rawYears === 'number' || typeof rawYears === 'string'
+                                                ? String(rawYears)
+                                                : null;
+                                        if (!years) return null;
+                                        return (
+                                            <div className="flex items-center space-x-4 text-sm text-slate-400">
+                                                <div className="flex items-center space-x-1">
+                                                    <Briefcase className="h-4 w-4" />
+                                                    <span>{years} years experience</span>
+                                                </div>
                                             </div>
-                                        </div>
-                                    )}
+                                        );
+                                    })()}
                                 </div>
                             ))}
                         </div>

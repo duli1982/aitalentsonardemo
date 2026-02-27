@@ -31,16 +31,16 @@ CREATE INDEX IF NOT EXISTS idx_bulk_ingestion_start_time ON bulk_ingestion_progr
 -- Grant permissions (adjust if needed)
 ALTER TABLE bulk_ingestion_progress ENABLE ROW LEVEL SECURITY;
 
--- Create policy to allow all operations for authenticated users
--- Modify this based on your security requirements
+-- Authenticated-only policy
+DROP POLICY IF EXISTS "Allow all operations for authenticated users" ON bulk_ingestion_progress;
 CREATE POLICY "Allow all operations for authenticated users"
 ON bulk_ingestion_progress
 FOR ALL
 TO authenticated
-USING (true)
-WITH CHECK (true);
+USING (auth.role() = 'authenticated')
+WITH CHECK (auth.role() = 'authenticated');
 
--- Optional: Create policy for anonymous users if needed
+-- Optional for local/demo only:
 -- CREATE POLICY "Allow all operations for anonymous users"
 -- ON bulk_ingestion_progress
 -- FOR ALL

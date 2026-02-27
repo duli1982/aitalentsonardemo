@@ -1,11 +1,11 @@
 import React from 'react';
 import CandidatesView from '../components/CandidatesView';
-import { Candidate, PipelineStage } from '../types';
+import { Candidate, Job, PipelineStage } from '../types';
 
 interface CandidatesPageProps {
     selectedCandidateId: string | null;
     setSelectedCandidateId: (id: string | null) => void;
-    runFitAnalysis: (type: any, candidate: Candidate) => void;
+    runFitAnalysis: (candidate: Candidate, job: Job) => Promise<unknown>;
     handleUpdateCandidate: (id: string, data: Partial<Candidate>) => void;
     handleAddCandidateToPipeline: (candidate: Candidate, jobId: string, initialStage?: PipelineStage) => void;
     handleUpdateCandidateStage: (candidateId: string, jobId: string, newStage: PipelineStage) => void;

@@ -33,14 +33,15 @@ CREATE INDEX IF NOT EXISTS idx_graph_migration_start_time ON graph_migration_pro
 ALTER TABLE graph_migration_progress ENABLE ROW LEVEL SECURITY;
 
 -- Create policy to allow all operations for authenticated users
+DROP POLICY IF EXISTS "Allow all operations for authenticated users" ON graph_migration_progress;
 CREATE POLICY "Allow all operations for authenticated users"
 ON graph_migration_progress
 FOR ALL
 TO authenticated
-USING (true)
-WITH CHECK (true);
+USING (auth.role() = 'authenticated')
+WITH CHECK (auth.role() = 'authenticated');
 
--- Optional: Create policy for anonymous users if needed
+-- Optional for local/demo only:
 -- CREATE POLICY "Allow all operations for anonymous users"
 -- ON graph_migration_progress
 -- FOR ALL

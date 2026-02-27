@@ -16,7 +16,7 @@ create extension if not exists pgcrypto;
 -- 1) Private demographics table (no policies by default)
 -- ---------------------------------------------------------
 create table if not exists public.candidate_demographics (
-  candidate_id uuid primary key references public.candidates(id) on delete cascade,
+  candidate_id text primary key,
   gender text check (gender in ('Male','Female','Non-binary','Prefer not to say') or gender is null),
   education_type text check (education_type in ('Elite','Traditional','Bootcamp','Self-taught','Prefer not to say') or education_type is null),
   university text,
@@ -26,6 +26,28 @@ create table if not exists public.candidate_demographics (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Add/refresh FK only when candidates.id is TEXT-compatible.
+do $$
+begin
+  alter table public.candidate_demographics
+    drop constraint if exists candidate_demographics_candidate_id_fkey;
+
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'candidates'
+      and column_name = 'id'
+      and data_type = 'text'
+  ) then
+    alter table public.candidate_demographics
+      add constraint candidate_demographics_candidate_id_fkey
+      foreign key (candidate_id) references public.candidates(id) on delete cascade;
+  else
+    raise notice 'Skipping candidate_demographics FK: public.candidates.id is not TEXT yet (run APPLY_APP_ID_COMPATIBILITY.sql first).';
+  end if;
+end $$;
 
 alter table public.candidate_demographics enable row level security;
 
@@ -101,7 +123,7 @@ begin
     where lower(l.to_stage) = lower(get_fairness_report_by_stage.stage)
   ),
   cohort_candidates as (
-    select c.id
+    select c.id::text as id
     from cohort x
     join public.candidates c on c.id::text = x.candidate_id
     where c.deleted_at is null
@@ -167,8 +189,8 @@ begin
       from latest l
       where lower(l.to_stage) = lower(get_fairness_report_by_stage.stage)
     ),
-    cohort_candidates as (
-      select c.id
+  cohort_candidates as (
+      select c.id::text as id
       from cohort x
       join public.candidates c on c.id::text = x.candidate_id
       where c.deleted_at is null
@@ -252,4 +274,3 @@ $$;
 
 grant execute on function public.get_fairness_report_by_stage(text, text, int, int, numeric) to authenticated;
 grant execute on function public.get_fairness_report_by_stage(text, text, int, int, numeric) to anon;
-

@@ -22,27 +22,38 @@ type Props = {
   onSaved?: () => void;
 };
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+}
+
 function parseExistingTruthCheck(artifact?: DecisionArtifactRecord | null): {
   pack: TruthCheckPack | null;
   answers: TruthCheckAnswerAssessment[];
 } {
-  const pack = (artifact?.details as any)?.truthCheck;
+  const details = asRecord(artifact?.details);
+  const pack = details.truthCheck;
   const savedPack = pack && typeof pack === 'object' ? (pack as TruthCheckPack) : null;
 
-  const answers = (artifact?.details as any)?.answers;
+  const answers = details.answers;
   const savedAnswers = Array.isArray(answers) ? (answers as TruthCheckAnswerAssessment[]) : [];
 
   // Backward compat: sometimes only `details.questions` exists.
-  const questions = (artifact?.details as any)?.questions;
+  const questions = details.questions;
   const legacy = Array.isArray(questions)
-    ? (questions as any[]).map((q, idx) => ({
+    ? questions.map((q, idx) => {
+        const question = asRecord(q);
+        const generic = asRecord(question.generic);
+        return {
         questionId: `tcq_${idx + 1}`,
-        question: String(q.question ?? ''),
-        answer: String(q.answer ?? ''),
-        score: Number(q.score ?? 0) || 0,
-        band: (q.band as TruthCheckRubricBand) || 'adequate',
-        generic: q.generic ?? { isGeneric: false, reasons: [] }
-      }))
+        question: String(question.question ?? ''),
+        answer: String(question.answer ?? ''),
+        score: Number(question.score ?? 0) || 0,
+        band: (question.band as TruthCheckRubricBand) || 'adequate',
+        generic: {
+          isGeneric: Boolean(generic.isGeneric),
+          reasons: Array.isArray(generic.reasons) ? generic.reasons.map((r) => String(r)) : []
+        }
+      }; })
     : [];
 
   return {
@@ -118,7 +129,8 @@ const PreHmTruthCheckModal: React.FC<Props> = ({ isOpen, candidate, job, existin
 
     seed()
       .catch((e) => {
-        if (!cancelled) setSaveError(String((e as any)?.message ?? e ?? 'Failed to load truth-check.'));
+        const message = (e as { message?: unknown } | null)?.message;
+        if (!cancelled) setSaveError(String(message ?? e ?? 'Failed to load truth-check.'));
       })
       .finally(() => {
         if (!cancelled) setIsLoading(false);

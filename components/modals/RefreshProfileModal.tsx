@@ -17,7 +17,11 @@ const RefreshProfileModal: React.FC<RefreshProfileModalProps> = ({ isOpen, onClo
     const handleRefresh = async () => {
         setIsRefreshing(true);
         try {
-            const result = await geminiService.refreshCandidateProfile(candidate);
+            const response = await geminiService.refreshCandidateProfileResult(candidate);
+            if (!response.success && 'error' in response) {
+                throw new Error(response.error.message);
+            }
+            const result = response.data;
             setRefreshData(result);
         } catch (error) {
             console.error('Error refreshing profile:', error);

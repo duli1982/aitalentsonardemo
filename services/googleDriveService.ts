@@ -5,6 +5,7 @@
 
 import type { UploadedCandidate } from '../types';
 import * as geminiService from './geminiService';
+import { TIMING } from '../config/timing';
 
 // Check if we're in production mode (has CLIENT_ID)
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -172,7 +173,7 @@ export const checkDriveConnection = (): DriveConnectionStatus => {
 export const connectToDrive = async (googleAccessToken?: string): Promise<DriveConnectionStatus> => {
   if (IS_DEMO_MODE) {
     // Demo mode
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await new Promise(resolve => setTimeout(resolve, TIMING.GOOGLE_DRIVE_DEMO_CONNECT_DELAY_MS));
 
     const connectionStatus: DriveConnectionStatus = {
       isConnected: true,
@@ -226,7 +227,7 @@ export const disconnectDrive = (): void => {
 export const listDriveCVs = async (folderId: string): Promise<DriveCVFile[]> => {
   if (IS_DEMO_MODE) {
     // Demo mode
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, TIMING.GOOGLE_DRIVE_DEMO_LIST_DELAY_MS));
     return MOCK_DRIVE_CVS.map(cv => ({
       id: cv.id,
       name: cv.name,
@@ -401,7 +402,6 @@ export const checkForDuplicates = (
   duplicateCount: number;
 } => {
   const importedFileIds = getImportedFileIds();
-  const existingEmails = new Set(existingCandidates.map(c => c.email.toLowerCase()));
 
   const newFiles: DriveCVFile[] = [];
   const duplicates: DriveCVFile[] = [];
@@ -459,7 +459,7 @@ export const scanAndImportCVs = async (
       // Mark as imported
       importedFileIds.add(driveFileId);
 
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, TIMING.GOOGLE_DRIVE_PARSE_THROTTLE_DELAY_MS));
       processedCount++;
     } catch (error) {
       console.error(`Failed to parse CV: ${file.name}`, error);

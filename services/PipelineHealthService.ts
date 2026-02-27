@@ -145,22 +145,30 @@ Return ONLY valid JSON with:
     const res = await aiService.generateJson<Omit<PipelineHealthAnalysis, 'method'>>(prompt, pipelineSchema);
     if (!res.success || !res.data) return fallback;
 
-    const data = res.data as any;
+    const data = res.data;
     const score = clamp(Math.round(Number(data.overallHealth ?? fallback.overallHealth)), 0, 100);
+    const rating =
+      data.healthRating === 'excellent' ||
+      data.healthRating === 'good' ||
+      data.healthRating === 'fair' ||
+      data.healthRating === 'poor' ||
+      data.healthRating === 'critical'
+        ? data.healthRating
+        : ratingFromScore(score);
 
     return {
       overallHealth: score,
-      healthRating: (data.healthRating as any) || ratingFromScore(score),
+      healthRating: rating,
       metrics: {
         totalCandidates: Number(data.metrics?.totalCandidates ?? fallback.metrics.totalCandidates) || fallback.metrics.totalCandidates,
         avgTimeToHire: Number(data.metrics?.avgTimeToHire ?? fallback.metrics.avgTimeToHire) || fallback.metrics.avgTimeToHire,
         conversionRate: Number(data.metrics?.conversionRate ?? fallback.metrics.conversionRate) || fallback.metrics.conversionRate,
         atRiskCount: Number(data.metrics?.atRiskCount ?? fallback.metrics.atRiskCount) || fallback.metrics.atRiskCount
       },
-      alerts: Array.isArray(data.alerts) ? (data.alerts as PipelineAlert[]).slice(0, 6) : fallback.alerts,
-      insights: Array.isArray(data.insights) ? data.insights.map((v: any) => safeText(v, 220)).filter(Boolean).slice(0, 6) : fallback.insights,
+      alerts: Array.isArray(data.alerts) ? data.alerts.slice(0, 6) : fallback.alerts,
+      insights: Array.isArray(data.insights) ? data.insights.map((v) => safeText(v, 220)).filter(Boolean).slice(0, 6) : fallback.insights,
       recommendations: Array.isArray(data.recommendations)
-        ? data.recommendations.map((v: any) => safeText(v, 220)).filter(Boolean).slice(0, 6)
+        ? data.recommendations.map((v) => safeText(v, 220)).filter(Boolean).slice(0, 6)
         : fallback.recommendations,
       method: 'ai'
     };
@@ -168,4 +176,3 @@ Return ONLY valid JSON with:
 }
 
 export const pipelineHealthService = new PipelineHealthService();
-

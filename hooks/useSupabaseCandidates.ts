@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Job, Candidate } from '../types';
-import { semanticSearchService } from '../services/SemanticSearchService';
+import { semanticSearchService, type SemanticSearchResult } from '../services/SemanticSearchService';
 import { supabase } from '../services/supabaseClient';
 import { degradedModeService } from '../services/DegradedModeService';
 import { notConfigured, unknown, upstream } from '../services/errorHandling';
+import { TIMING } from '../config/timing';
 
 export interface SupabaseCandidateResult {
     id: string;
@@ -12,13 +13,17 @@ export interface SupabaseCandidateResult {
     type: 'uploaded'; // All Supabase candidates are 'uploaded' type
     skills: string[];
     matchScore: number; // 0-100 based on semantic similarity
-    metadata?: any;
+    metadata?: Record<string, unknown>;
     // Graph relationships
     companies?: string[];
     schools?: string[];
     experienceYears?: number;
     location?: string;
     matchReason?: string; // Why they match
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
 }
 
 interface UseSupabaseCandidatesOptions {
@@ -85,7 +90,7 @@ export const useSupabaseCandidates = (
                 const age = Date.now() - timestamp;
                 staleCache = { data, timestamp };
                 // Cache valid for 5 minutes
-                if (age < 5 * 60 * 1000) {
+                if (age < TIMING.CACHE_TTL_MS) {
                     console.log(`[useSupabaseCandidates] Using cached results for job ${job.id}`);
                     setCandidates(data);
                     setHasMore(data.length === effectiveLimit);
@@ -231,7 +236,7 @@ export const useSupabaseCandidates = (
  * Enrich candidates with graph relationship data
  */
 async function enrichWithGraphData(
-    results: any[],
+    results: SemanticSearchResult[],
     job: Job | null,
     jobId?: string
 ): Promise<SupabaseCandidateResult[]> {
@@ -281,18 +286,20 @@ async function enrichWithGraphData(
         const companyMap = new Map<string, string[]>();
         const schoolMap = new Map<string, string[]>();
 
-        companyData?.forEach((row: any) => {
-            const id = row.candidate_id;
-            const companyName = row.companies?.name;
+        companyData?.forEach((row) => {
+            const record = asRecord(row);
+            const id = String(record.candidate_id ?? '');
+            const companyName = String(asRecord(record.companies).name ?? '');
             if (companyName) {
                 if (!companyMap.has(id)) companyMap.set(id, []);
                 companyMap.get(id)!.push(companyName);
             }
         });
 
-        schoolData?.forEach((row: any) => {
-            const id = row.candidate_id;
-            const schoolName = row.schools?.name;
+        schoolData?.forEach((row) => {
+            const record = asRecord(row);
+            const id = String(record.candidate_id ?? '');
+            const schoolName = String(asRecord(record.schools).name ?? '');
             if (schoolName) {
                 if (!schoolMap.has(id)) schoolMap.set(id, []);
                 schoolMap.get(id)!.push(schoolName);
@@ -307,9 +314,9 @@ async function enrichWithGraphData(
             const matchScore = Math.round(result.similarity * 100);
 
             // Extract metadata
-            const metadata = result.metadata || {};
-            const experienceYears = metadata.experienceYears || metadata.experience || 0;
-            const location = metadata.location || '';
+            const metadata = asRecord(result.metadata);
+            const experienceYears = Number(metadata.experienceYears || metadata.experience || 0);
+            const location = String(metadata.location || '');
 
             // Build match reason
             const matchReason = buildMatchReason(

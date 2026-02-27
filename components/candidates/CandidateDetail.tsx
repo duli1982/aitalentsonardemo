@@ -18,6 +18,7 @@ import { determineNextAction, type NextActionSuggestion } from '../../services/N
 import { schedulingPersistenceService, type ScheduledInterviewRecord } from '../../services/SchedulingPersistenceService';
 import { interviewSessionPersistenceService, type InterviewSessionRecord } from '../../services/InterviewSessionPersistenceService';
 import RecommendationScorecardPanel from './RecommendationScorecardPanel';
+import { TIMING } from '../../config/timing';
 
 interface CandidateDetailProps {
     candidate: Candidate | undefined;
@@ -39,9 +40,14 @@ type SemanticJobMatchCache = {
     jobSignatureByJobId: Record<string, string>;
 };
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+    return value && typeof value === 'object' ? (value as Record<string, unknown>) : null;
+}
+
 function getJobSignature(job: Job): string {
-    const requiredSkills = Array.isArray((job as any).requiredSkills) ? (job as any).requiredSkills : [];
-    const seniority = (job as any).seniority || (job as any).experienceLevel || '';
+    const requiredSkills = Array.isArray(job.requiredSkills) ? job.requiredSkills : [];
+    const jobExtensions = job as unknown as { seniority?: string; experienceLevel?: string };
+    const seniority = jobExtensions.seniority || jobExtensions.experienceLevel || '';
     return [
         job.id,
         job.title ?? '',
@@ -54,8 +60,9 @@ function getJobSignature(job: Job): string {
 }
 
 function buildJobEmbeddingText(job: Job): string {
-    const requiredSkills = Array.isArray((job as any).requiredSkills) ? (job as any).requiredSkills : [];
-    const seniority = (job as any).seniority || (job as any).experienceLevel || '';
+    const requiredSkills = Array.isArray(job.requiredSkills) ? job.requiredSkills : [];
+    const jobExtensions = job as unknown as { seniority?: string; experienceLevel?: string };
+    const seniority = jobExtensions.seniority || jobExtensions.experienceLevel || '';
     const description = (job.description ?? '').slice(0, 1200);
     return [
         `Job title: ${job.title || ''}`,
@@ -70,10 +77,10 @@ function buildJobEmbeddingText(job: Job): string {
 }
 
 function buildCandidateEmbeddingText(candidate: Candidate): string {
-    const role = (candidate as any).role || (candidate as any).currentRole || (candidate as any).previousRoleAppliedFor || '';
-    const department = (candidate as any).department || '';
-    const summary = (candidate as any).summary || (candidate as any).careerAspirations || (candidate as any).notes || '';
-    const experienceYears = (candidate as any).experienceYears ?? (candidate as any).experience ?? 0;
+    const role = candidate.role || candidate.currentRole || candidate.previousRoleAppliedFor || '';
+    const department = candidate.department || '';
+    const summary = candidate.summary || candidate.careerAspirations || candidate.notes || '';
+    const experienceYears = candidate.experienceYears ?? candidate.experience ?? 0;
 
     return [
         `Candidate: ${candidate.name || ''}`,
@@ -115,7 +122,7 @@ function similarityToPercent(similarity: number): number {
     return 100;
 }
 
-const CandidateDetail: React.FC<CandidateDetailProps> = ({ candidate, jobs, onInitiateAnalysis, onAddToPipeline }) => {
+const CandidateDetail: React.FC<CandidateDetailProps> = ({ candidate, jobs, onInitiateAnalysis, onAddToPipeline, onUpdateCandidateStage }) => {
     // Consolidated State
     const [activeModal, setActiveModal] = useState<ActiveModal>(null);
     const [selectedJobContext, setSelectedJobContext] = useState<Job | null>(null);
@@ -227,7 +234,11 @@ const CandidateDetail: React.FC<CandidateDetailProps> = ({ candidate, jobs, onIn
             }
 
             try {
-                const score = await geminiService.calculateEngagementScore(candidate, { mode: 'estimated' });
+                const scoreResult = await geminiService.calculateEngagementScoreResult(candidate, { mode: 'estimated' });
+                if (!scoreResult.success && 'error' in scoreResult) {
+                    throw new Error(scoreResult.error.message);
+                }
+                const score = scoreResult.data;
                 if (cancelled) return;
                 setEngagementScore(score);
                 try {
@@ -307,7 +318,11 @@ const CandidateDetail: React.FC<CandidateDetailProps> = ({ candidate, jobs, onIn
                 const candidateText = buildCandidateEmbeddingText(candidate);
                 const candidateEmbeddingResult = await aiService.embedText(candidateText);
                 if (!candidateEmbeddingResult.success || !candidateEmbeddingResult.data) {
-                    throw new Error(candidateEmbeddingResult.error.message || 'Failed to generate candidate embedding');
+                    const errorMessage =
+                        !candidateEmbeddingResult.success && 'error' in candidateEmbeddingResult
+                            ? candidateEmbeddingResult.error.message
+                            : 'Failed to generate candidate embedding';
+                    throw new Error(errorMessage);
                 }
 
                 const updatedScores: Record<string, number> = { ...cachedScores };
@@ -386,7 +401,7 @@ const CandidateDetail: React.FC<CandidateDetailProps> = ({ candidate, jobs, onIn
         const interval = setInterval(() => {
             setScreeningRefreshTick((v) => v + 1);
             void load();
-        }, 20000);
+        }, TIMING.SCREENING_RESULTS_REFRESH_INTERVAL_MS);
 
         return () => {
             cancelled = true;
@@ -419,7 +434,7 @@ const CandidateDetail: React.FC<CandidateDetailProps> = ({ candidate, jobs, onIn
 
         const interval = setInterval(() => {
             void load();
-        }, 30000);
+        }, TIMING.PIPELINE_EVENTS_REFRESH_INTERVAL_MS);
 
         return () => {
             cancelled = true;
@@ -452,7 +467,7 @@ const CandidateDetail: React.FC<CandidateDetailProps> = ({ candidate, jobs, onIn
 
         const interval = setInterval(() => {
             void load();
-        }, 45000);
+        }, TIMING.SCHEDULED_INTERVIEWS_REFRESH_INTERVAL_MS);
 
         return () => {
             cancelled = true;
@@ -485,7 +500,7 @@ const CandidateDetail: React.FC<CandidateDetailProps> = ({ candidate, jobs, onIn
 
         const interval = setInterval(() => {
             void load();
-        }, 45000);
+        }, TIMING.INTERVIEW_SESSIONS_REFRESH_INTERVAL_MS);
 
         return () => {
             cancelled = true;
@@ -608,7 +623,7 @@ const CandidateDetail: React.FC<CandidateDetailProps> = ({ candidate, jobs, onIn
 	        const jobsWithScores = jobMatches.map(({ job, score }) => ({ job, score }));
 	        const suggestion = determineNextAction({
 	            candidateId: String(candidate.id),
-	            pipelineStageByJobId: (candidate as any).pipelineStage || {},
+	            pipelineStageByJobId: candidate.pipelineStage || {},
 	            jobMatches: jobsWithScores,
 	            pipelineEvents,
 	            screeningsByJob,
@@ -656,7 +671,7 @@ const CandidateDetail: React.FC<CandidateDetailProps> = ({ candidate, jobs, onIn
                     jobTitle: job.title,
                     semanticMatchScore,
                     shortlistArtifact: latestShortlist,
-                    screeningArtifact: screeningArtifact as any,
+                    screeningArtifact,
                     engagementScore: engagementScore
                         ? {
                             score: engagementScore.score,
@@ -672,8 +687,8 @@ const CandidateDetail: React.FC<CandidateDetailProps> = ({ candidate, jobs, onIn
                 nextByJobId[job.id] = scorecard;
 
                 const previous = scorecardsByJobIdRef.current[job.id];
-                const previousFingerprint = (previous?.provenance as any)?.fingerprint;
-                const nextFingerprint = (scorecard.provenance as any)?.fingerprint;
+                const previousFingerprint = asRecord(previous?.provenance)?.fingerprint;
+                const nextFingerprint = asRecord(scorecard.provenance)?.fingerprint;
 
                 if (!previous || previousFingerprint !== nextFingerprint || previous.overallScore !== scorecard.overallScore) {
                     changed = true;
@@ -725,7 +740,11 @@ const CandidateDetail: React.FC<CandidateDetailProps> = ({ candidate, jobs, onIn
         try {
             setEngagementLoading(true);
             setEngagementError(null);
-            const score = await geminiService.calculateEngagementScore(candidate, { mode, maxRetries: 1 });
+            const scoreResult = await geminiService.calculateEngagementScoreResult(candidate, { mode, maxRetries: 1 });
+            if (!scoreResult.success && 'error' in scoreResult) {
+                throw new Error(scoreResult.error.message);
+            }
+            const score = scoreResult.data;
             setEngagementScore(score);
             try {
                 localStorage.setItem(`engagement_score:v1:${candidate.id}`, JSON.stringify({ createdAt: Date.now(), value: score }));
@@ -787,7 +806,7 @@ const CandidateDetail: React.FC<CandidateDetailProps> = ({ candidate, jobs, onIn
 	                        jobTitle: job.title,
 	                        eventType: 'STAGE_MOVED',
 	                        actorType: 'user',
-	                        fromStage: (candidate as any).pipelineStage?.[job.id] || 'new',
+	                        fromStage: candidate.pipelineStage?.[job.id] || 'new',
 	                        toStage: 'long_list',
 	                        summary: `Candidate added to Long List for ${job.title}.`
 	                    });
@@ -910,12 +929,12 @@ const CandidateDetail: React.FC<CandidateDetailProps> = ({ candidate, jobs, onIn
                                             if (!selectedPipelineJobId) return;
                                             onAddToPipeline(candidate, selectedPipelineJobId);
                                         }}
-                                        disabled={!selectedPipelineJobId || Boolean((candidate as any).pipelineStage?.[selectedPipelineJobId])}
+                                        disabled={!selectedPipelineJobId || Boolean(candidate.pipelineStage?.[selectedPipelineJobId])}
                                         className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-sm font-semibold rounded-lg transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                                        title={Boolean((candidate as any).pipelineStage?.[selectedPipelineJobId]) ? 'Already in pipeline for this job' : 'Add candidate to pipeline'}
+                                        title={Boolean(candidate.pipelineStage?.[selectedPipelineJobId]) ? 'Already in pipeline for this job' : 'Add candidate to pipeline'}
                                     >
                                         <Briefcase size={16} />
-                                        {Boolean((candidate as any).pipelineStage?.[selectedPipelineJobId]) ? 'In Pipeline' : 'Add to Pipeline'}
+                                        {Boolean(candidate.pipelineStage?.[selectedPipelineJobId]) ? 'In Pipeline' : 'Add to Pipeline'}
                                     </button>
                                 </div>
                             )}
@@ -1494,7 +1513,8 @@ const CandidateDetail: React.FC<CandidateDetailProps> = ({ candidate, jobs, onIn
                                             {sessions.map((session) => {
                                                 const providerLabel = session.meetingProvider === 'ms_teams' ? 'MS Teams' : session.meetingProvider === 'google_meet' ? 'Google Meet' : session.meetingProvider;
                                                 const transcriptCount = Array.isArray(session.transcript) ? session.transcript.length : 0;
-                                                const debriefSummary = (session.debrief as any)?.summary ?? (session.debrief as any)?.notes ?? null;
+                                                const debriefRecord = asRecord(session.debrief);
+                                                const debriefSummary = debriefRecord?.summary ?? debriefRecord?.notes ?? null;
 
                                                 return (
                                                     <div
@@ -1760,17 +1780,20 @@ const CandidateDetail: React.FC<CandidateDetailProps> = ({ candidate, jobs, onIn
                                     </div>
                                 </div>
                                 <div className="space-y-2">
-                                    {(Array.isArray(selectedInterviewSession.transcript) ? selectedInterviewSession.transcript.slice(-25) : []).map((t: any, idx: number) => (
-                                        <div key={`${selectedInterviewSession.sessionId}_${idx}`} className="text-xs text-slate-200">
-                                            {t?.timestamp ? (
-                                                <span className="text-[10px] text-slate-500 mr-2">
-                                                    {new Date(t.timestamp).toLocaleTimeString()}
-                                                </span>
-                                            ) : null}
-                                            <span className="text-slate-400 mr-2">{t?.speaker ? String(t.speaker) : 'Speaker'}</span>
-                                            <span className="whitespace-pre-wrap">{t?.text ? String(t.text) : JSON.stringify(t)}</span>
-                                        </div>
-                                    ))}
+                                    {(Array.isArray(selectedInterviewSession.transcript) ? selectedInterviewSession.transcript.slice(-25) : []).map((t: unknown, idx: number) => {
+                                        const entry = asRecord(t);
+                                        return (
+                                            <div key={`${selectedInterviewSession.sessionId}_${idx}`} className="text-xs text-slate-200">
+                                                {entry?.timestamp ? (
+                                                    <span className="text-[10px] text-slate-500 mr-2">
+                                                        {new Date(String(entry.timestamp)).toLocaleTimeString()}
+                                                    </span>
+                                                ) : null}
+                                                <span className="text-slate-400 mr-2">{entry?.speaker ? String(entry.speaker) : 'Speaker'}</span>
+                                                <span className="whitespace-pre-wrap">{entry?.text ? String(entry.text) : JSON.stringify(t)}</span>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         </div>

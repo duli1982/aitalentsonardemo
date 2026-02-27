@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
-import { Job, DepartmentInsight, Candidate, PipelineStage } from './types';
+import { Job, DepartmentInsight, Candidate, PipelineStage, InterviewGuide, UploadedCandidate } from './types';
 import AddJobModal from './components/modals/AddJobModal';
 import UploadCvModal from './components/modals/UploadCvModal';
 import AnalysisModal from './components/modals/AnalysisModal';
@@ -15,10 +15,12 @@ import RoleContextPackModal from './components/modals/RoleContextPackModal';
 import { useAnalysis } from './hooks/useAnalysis';
 import { DataProvider, useData } from './contexts/DataContext';
 import { useToast } from './contexts/ToastContext';
+import { CandidateJobDrawerProvider } from './contexts/CandidateJobDrawerContext';
 import { useCandidateOperations } from './hooks/useCandidateOperations';
 import { useJobOperations } from './hooks/useJobOperations';
 import { Loader2, Sparkles } from 'lucide-react';
 import { eventBus, EVENTS } from './utils/EventBus';
+import { TIMING } from './config/timing';
 
 // Layouts & Pages
 import MainLayout from './layouts/MainLayout';
@@ -44,6 +46,20 @@ type PulseNavigatePayload = {
   jobId?: string;
 };
 
+type CandidateStagedPayload = {
+  candidateId?: string;
+  candidateName?: string;
+  jobId?: string;
+  stage?: PipelineStage | string;
+  candidate?: Candidate;
+};
+
+type CandidateUpdatedPayload = {
+  candidateId?: string;
+  updates?: Partial<Candidate>;
+  candidate?: Partial<Candidate>;
+};
+
 const PulseNavigationHandler: React.FC<{
   jobs: Job[];
   allCandidates: Candidate[];
@@ -54,7 +70,7 @@ const PulseNavigationHandler: React.FC<{
   const navigate = useNavigate();
 
   useEffect(() => {
-    const sub = eventBus.on<any>(EVENTS.PULSE_NAVIGATE, (data: PulseNavigatePayload) => {
+    const sub = eventBus.on<PulseNavigatePayload>(EVENTS.PULSE_NAVIGATE, (data) => {
       const target = String(data?.to || '').toLowerCase();
       const candidateId = data?.candidateId ? String(data.candidateId) : null;
       const jobId = data?.jobId ? String(data.jobId) : null;
@@ -80,7 +96,7 @@ const PulseNavigationHandler: React.FC<{
         const candidate = allCandidates.find((c) => String(c.id) === candidateId);
         const job = jobs.find((j) => String(j.id) === jobId);
         if (candidate && job) {
-          setTimeout(() => openCandidateJobDrawer(candidate, job), 0);
+          setTimeout(() => openCandidateJobDrawer(candidate, job), TIMING.NEXT_TICK_DELAY_MS);
         }
       }
     });
@@ -187,7 +203,7 @@ const AppContent = () => {
     setIntakeJob(job);
     setIntakePromptOpen(true);
   };
-  const handleAddCandidates = (candidates: any[]) => handleAddCandidatesLogic(candidates, selectedJobId || undefined, handleBatchAnalysis);
+  const handleAddCandidates = (candidates: UploadedCandidate[]) => handleAddCandidatesLogic(candidates, selectedJobId || undefined, handleBatchAnalysis);
 
   const handleHireCandidate = (candidateId: string, jobId: string) => {
     handleHireCandidateLogic(candidateId, jobId);
@@ -229,7 +245,7 @@ const AppContent = () => {
 
   // Allow background agents to advance candidates through the pipeline.
   useEffect(() => {
-    const subscription = eventBus.on<any>(EVENTS.CANDIDATE_STAGED, (data) => {
+    const subscription = eventBus.on<CandidateStagedPayload>(EVENTS.CANDIDATE_STAGED, (data) => {
       const candidateId = String(data?.candidateId || '');
       const jobId = String(data?.jobId || '');
       const requestedStage = String(data?.stage || '').toLowerCase() as PipelineStage;
@@ -246,7 +262,7 @@ const AppContent = () => {
       }
 
       if (!candidate) return;
-      const rawCurrent = (candidate as any)?.pipelineStage?.[jobId] ?? (candidate as any)?.stage;
+      const rawCurrent = candidate.pipelineStage?.[jobId] ?? candidate.stage;
       const current = String(rawCurrent || '').toLowerCase();
 
       // Back-compat: old stages map to `new`
@@ -279,7 +295,7 @@ const AppContent = () => {
 
   // Allow background agents to update candidate fields (e.g., AI scores / notes) without direct UI interaction.
   useEffect(() => {
-    const subscription = eventBus.on<any>(EVENTS.CANDIDATE_UPDATED, (data) => {
+    const subscription = eventBus.on<CandidateUpdatedPayload>(EVENTS.CANDIDATE_UPDATED, (data) => {
       const candidateId = String(data?.candidateId || '');
       const updates = (data?.updates || data?.candidate || {}) as Partial<Candidate>;
       if (!candidateId || !updates) return;
@@ -289,11 +305,11 @@ const AppContent = () => {
 
       const merged: Partial<Candidate> = { ...updates };
 
-      if (Array.isArray((updates as any).skills)) {
+      if (Array.isArray(updates.skills)) {
         const base = Array.isArray(candidate.skills) ? candidate.skills : [];
         const next = [...base];
         const seen = new Set(base.map((s) => String(s).toLowerCase()));
-        (updates as any).skills.forEach((s: any) => {
+        updates.skills.forEach((s) => {
           const key = String(s).toLowerCase();
           if (seen.has(key)) return;
           seen.add(key);
@@ -302,21 +318,21 @@ const AppContent = () => {
         merged.skills = next;
       }
 
-      if ((updates as any).passport) {
-        const patch = (updates as any).passport;
-        const existing = (candidate as any).passport ?? { verifiedSkills: [], badges: [] };
+      if (updates.passport) {
+        const patch = updates.passport;
+        const existing = candidate.passport ?? { verifiedSkills: [], badges: [] };
         const existingSkills = Array.isArray(existing.verifiedSkills) ? existing.verifiedSkills : [];
         const deltaSkills = Array.isArray(patch.verifiedSkills) ? patch.verifiedSkills : [];
 
-        const byName = new Map<string, any>();
-        existingSkills.forEach((s: any) => {
-          const key = String(s?.skillName || '').toLowerCase();
+        const byName = new Map<string, (typeof existingSkills)[number]>();
+        existingSkills.forEach((s) => {
+          const key = String(s?.skillName ?? '').toLowerCase();
           if (!key) return;
           byName.set(key, s);
         });
 
-        deltaSkills.forEach((s: any) => {
-          const key = String(s?.skillName || '').toLowerCase();
+        deltaSkills.forEach((s) => {
+          const key = String(s?.skillName ?? '').toLowerCase();
           if (!key) return;
           const prev = byName.get(key);
           const prevLevel = Number(prev?.proficiencyLevel ?? 0);
@@ -329,15 +345,15 @@ const AppContent = () => {
         merged.passport = {
           verifiedSkills: Array.from(byName.values()),
           badges: nextBadges
-        } as any;
+        };
       }
 
-      if ((updates as any).matchScores) {
-        merged.matchScores = { ...(candidate.matchScores || {}), ...(updates as any).matchScores };
+      if (updates.matchScores) {
+        merged.matchScores = { ...(candidate.matchScores || {}), ...updates.matchScores };
       }
 
-      if ((updates as any).matchRationales) {
-        merged.matchRationales = { ...((candidate as any).matchRationales || {}), ...(updates as any).matchRationales };
+      if (updates.matchRationales) {
+        merged.matchRationales = { ...(candidate.matchRationales || {}), ...updates.matchRationales };
       }
 
       handleUpdateCandidate(candidateId, merged);
@@ -354,90 +370,90 @@ const AppContent = () => {
   return (
     <BrowserRouter>
       <AutonomousAgentsBootstrap isInitialized={isInitialized} jobs={jobs} allCandidates={allCandidates} />
-      <PulseNavigationHandler
-        jobs={jobs}
-        allCandidates={allCandidates}
-        setSelectedJobId={setSelectedJobId}
-        setSelectedCandidateId={setSelectedCandidateId}
-        openCandidateJobDrawer={openCandidateJobDrawer}
-      />
-      <Routes>
-        <Route
-          path="/"
-          element={
-            <MainLayout
-              error={error}
-              setError={setError}
-              onOpenSmartSearch={() => setSmartSearchModalOpen(true)}
-              onOpenRAG={() => setRAGModalOpen(true)}
-              onOpenUploadCv={() => setUploadCvModalOpen(true)}
-            />
-          }
-        >
-          <Route index element={
-            <JobsPage
-              jobs={jobs}
-              selectedJobId={selectedJobId}
-              setSelectedJobId={setSelectedJobId}
-              filteredJobs={filteredJobs}
-              searchTerm={searchTerm}
-              setSearchTerm={setSearchTerm}
-              statusFilter={statusFilter}
-              setStatusFilter={setStatusFilter}
-              setAddJobModalOpen={setAddJobModalOpen}
-              handleInitiateAnalysis={handleInitiateAnalysis}
-              handleUpdateJobStatus={handleUpdateJobStatus}
-              handleFeedback={handleFeedback}
-              handleBatchAnalysis={handleBatchAnalysis}
-              handleViewProfile={(c) => { setSelectedProfileCandidate(c); setCandidateProfileModalOpen(true); }}
-              handleOpenCandidateJobDrawer={(candidate, job) => openCandidateJobDrawer(candidate, job)}
-              handleAddCandidateToPipeline={handleAddCandidateToPipeline}
-              isLoading={isLoading}
-              loadingCandidateId={loadingCandidateId}
-              isBatchAnalyzing={isBatchAnalyzing}
-              analysisState={analysisState}
-              selectedJob={selectedJob}
-            />
-          } />
-          <Route path="pipeline" element={
-            <PipelinePage
-              jobs={jobs}
-              selectedJobId={selectedJobId}
-              setSelectedJobId={setSelectedJobId}
-              filteredJobs={filteredJobs}
-              searchTerm={searchTerm}
-              setSearchTerm={setSearchTerm}
-              statusFilter={statusFilter}
-              setStatusFilter={setStatusFilter}
-              setAddJobModalOpen={setAddJobModalOpen}
-              handleUpdateCandidateStage={handleUpdateCandidateStage}
-              onOpenCandidateJobDrawer={(candidate, job) => openCandidateJobDrawer(candidate, job)}
-            />
-          } />
-	          <Route path="candidates" element={
-	            <CandidatesPage
-	              selectedCandidateId={selectedCandidateId}
-	              setSelectedCandidateId={setSelectedCandidateId}
-	              runFitAnalysis={runFitAnalysis}
-	              handleUpdateCandidate={handleUpdateCandidate}
-	              handleAddCandidateToPipeline={handleAddCandidateToPipeline}
-	              handleUpdateCandidateStage={handleUpdateCandidateStage}
-	            />
-	          } />
-          <Route path="insights" element={<InsightsPage departmentInsights={departmentInsights} />} />
-          <Route path="org-twin" element={<OrgTwinPage />} />
-          <Route path="forecast" element={<ForecastPage />} />
-          <Route path="agents" element={<AgentPlaygroundPage />} />
-          <Route path="autonomous-agents" element={<AutonomousAgentsPage />} />
-          <Route path="agent-inbox" element={<AgentInboxPage />} />
-          <Route path="mobility" element={<MobilityPage />} />
-          <Route path="governance" element={<GovernancePage />} />
-          <Route path="war-room" element={<WarRoomPage />} />
-          <Route path="health" element={<HealthPage />} />
-          <Route path="ingest" element={<IngestPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Route>
-      </Routes>
+      <CandidateJobDrawerProvider openCandidateJobDrawer={openCandidateJobDrawer}>
+        <PulseNavigationHandler
+          jobs={jobs}
+          allCandidates={allCandidates}
+          setSelectedJobId={setSelectedJobId}
+          setSelectedCandidateId={setSelectedCandidateId}
+          openCandidateJobDrawer={openCandidateJobDrawer}
+        />
+        <Routes>
+          <Route
+            path="/"
+            element={
+              <MainLayout
+                error={error}
+                setError={setError}
+                onOpenSmartSearch={() => setSmartSearchModalOpen(true)}
+                onOpenRAG={() => setRAGModalOpen(true)}
+                onOpenUploadCv={() => setUploadCvModalOpen(true)}
+              />
+            }
+          >
+            <Route index element={
+              <JobsPage
+                jobs={jobs}
+                selectedJobId={selectedJobId}
+                setSelectedJobId={setSelectedJobId}
+                filteredJobs={filteredJobs}
+                searchTerm={searchTerm}
+                setSearchTerm={setSearchTerm}
+                statusFilter={statusFilter}
+                setStatusFilter={setStatusFilter}
+                setAddJobModalOpen={setAddJobModalOpen}
+                handleInitiateAnalysis={handleInitiateAnalysis}
+                handleUpdateJobStatus={handleUpdateJobStatus}
+                handleFeedback={handleFeedback}
+                handleBatchAnalysis={handleBatchAnalysis}
+                handleViewProfile={(c) => { setSelectedProfileCandidate(c); setCandidateProfileModalOpen(true); }}
+                handleAddCandidateToPipeline={handleAddCandidateToPipeline}
+                isLoading={isLoading}
+                loadingCandidateId={loadingCandidateId}
+                isBatchAnalyzing={isBatchAnalyzing}
+                analysisState={analysisState}
+                selectedJob={selectedJob}
+              />
+            } />
+            <Route path="pipeline" element={
+              <PipelinePage
+                jobs={jobs}
+                selectedJobId={selectedJobId}
+                setSelectedJobId={setSelectedJobId}
+                filteredJobs={filteredJobs}
+                searchTerm={searchTerm}
+                setSearchTerm={setSearchTerm}
+                statusFilter={statusFilter}
+                setStatusFilter={setStatusFilter}
+                setAddJobModalOpen={setAddJobModalOpen}
+                handleUpdateCandidateStage={handleUpdateCandidateStage}
+              />
+            } />
+		            <Route path="candidates" element={
+		              <CandidatesPage
+		                selectedCandidateId={selectedCandidateId}
+		                setSelectedCandidateId={setSelectedCandidateId}
+		                runFitAnalysis={runFitAnalysis}
+		                handleUpdateCandidate={handleUpdateCandidate}
+		                handleAddCandidateToPipeline={handleAddCandidateToPipeline}
+		                handleUpdateCandidateStage={handleUpdateCandidateStage}
+		              />
+		            } />
+            <Route path="insights" element={<InsightsPage departmentInsights={departmentInsights} />} />
+            <Route path="org-twin" element={<OrgTwinPage />} />
+            <Route path="forecast" element={<ForecastPage />} />
+            <Route path="agents" element={<AgentPlaygroundPage />} />
+            <Route path="autonomous-agents" element={<AutonomousAgentsPage />} />
+            <Route path="agent-inbox" element={<AgentInboxPage />} />
+            <Route path="mobility" element={<MobilityPage />} />
+            <Route path="governance" element={<GovernancePage />} />
+            <Route path="war-room" element={<WarRoomPage />} />
+            <Route path="health" element={<HealthPage />} />
+            <Route path="ingest" element={<IngestPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Route>
+        </Routes>
+      </CandidateJobDrawerProvider>
 
       {/* Global Modals */}
       {isAddJobModalOpen && <AddJobModal onClose={() => setAddJobModalOpen(false)} onAddJob={handleAddJob} />}
@@ -493,7 +509,7 @@ const AppContent = () => {
           <InterviewGuideModal
             isOpen={isAnalysisModalOpen}
             onClose={() => setAnalysisModalOpen(false)}
-            guide={analysisState.result as any}
+            guide={analysisState.result as InterviewGuide}
             isLoading={isLoading}
           />
         ) : (

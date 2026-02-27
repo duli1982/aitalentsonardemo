@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { AgentRole, AgentRequest, AgentResponse } from '../types/agent';
 import { agentGateway } from '../services/AgentGateway';
 import { Bot, User, Shield, Terminal, Send, Database } from 'lucide-react';
+import { TIMING } from '../config/timing';
 
 const AgentPlaygroundPage: React.FC = () => {
     const [role, setRole] = useState<AgentRole>('HIRING_MANAGER');
@@ -40,7 +41,7 @@ const AgentPlaygroundPage: React.FC = () => {
         };
 
         // Simulate network delay
-        await new Promise(resolve => setTimeout(resolve, 600));
+        await new Promise(resolve => setTimeout(resolve, TIMING.AGENT_PLAYGROUND_NETWORK_DELAY_MS));
 
         // Call Gateway
         const response = await agentGateway.handleRequest(request);

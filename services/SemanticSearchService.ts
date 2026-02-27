@@ -13,7 +13,7 @@ export interface SemanticSearchResult {
     skills: string[];
     similarity: number;
     content: string;
-    metadata: any;
+    metadata: Record<string, unknown>;
 }
 
 export interface SearchOptions {
@@ -23,6 +23,9 @@ export interface SearchOptions {
 }
 
 class SemanticSearchService {
+    private toMetadata(value: unknown): Record<string, unknown> {
+        return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+    }
 
     /**
      * Performs AI-powered semantic search on the vector database
@@ -50,8 +53,8 @@ class SemanticSearchService {
 
         if (!embeddingResult.success || !embeddingResult.data) {
             return err(
-                upstream('SemanticSearchService', 'Failed to generate query embedding.', embeddingResult.error),
-                { retryAfterMs: embeddingResult.retryAfterMs, data: [] }
+                upstream('SemanticSearchService', 'Failed to generate query embedding.', embeddingResult.success ? undefined : embeddingResult.error),
+                { retryAfterMs: embeddingResult.success ? undefined : embeddingResult.retryAfterMs, data: [] }
             );
         }
 
@@ -72,21 +75,27 @@ class SemanticSearchService {
         }
 
         // Step 3: Parse and filter results
-        let results: SemanticSearchResult[] = data.map((row: any) => {
-            const meta = row.metadata || {};
-            const candidateId = row.candidate_id || meta.id || `unknown-${row.id}`;
-            const name = row.name || meta.name || 'Unknown';
-            const email = row.email || meta.email;
-            const type = row.type || meta.type || 'uploaded';
-            const skills = Array.isArray(row.skills) ? row.skills : Array.isArray(meta.skills) ? meta.skills : [];
+        let results: SemanticSearchResult[] = data.map((row: Record<string, unknown>) => {
+            const meta = this.toMetadata(row.metadata);
+            const candidateId = row.candidate_id || meta.id || `unknown-${String(row.id ?? 'candidate')}`;
+            const name = (typeof row.name === 'string' ? row.name : undefined) || (typeof meta.name === 'string' ? meta.name : undefined) || 'Unknown';
+            const email = (typeof row.email === 'string' ? row.email : undefined) || (typeof meta.email === 'string' ? meta.email : undefined);
+            const mappedType = (typeof row.type === 'string' ? row.type : undefined) || (typeof meta.type === 'string' ? meta.type : undefined);
+            const type: 'internal' | 'past' | 'uploaded' =
+                mappedType === 'internal' || mappedType === 'past' || mappedType === 'uploaded' ? mappedType : 'uploaded';
+            const fromRowSkills = Array.isArray(row.skills) ? row.skills : null;
+            const fromMetaSkills = Array.isArray(meta.skills) ? meta.skills : null;
+            const skills = (fromRowSkills ?? fromMetaSkills ?? []).map((s) => String(s));
+            const similarity = typeof row.similarity === 'number' ? row.similarity : 0;
+            const content = typeof row.content === 'string' ? row.content : '';
             return {
                 id: String(candidateId),
                 name,
                 email,
                 type,
                 skills,
-                similarity: row.similarity,
-                content: row.content,
+                similarity,
+                content,
                 metadata: meta
             };
         });
@@ -141,16 +150,23 @@ class SemanticSearchService {
 
         // Parse results and exclude the reference candidate
         const results: SemanticSearchResult[] = data
-            .map((row: any) => ({
-                id: row.metadata?.id || `unknown-${row.id}`,
-                name: row.metadata?.name || 'Unknown',
-                email: row.metadata?.email,
-                type: row.metadata?.type || 'uploaded',
-                skills: row.metadata?.skills || [],
-                similarity: row.similarity,
-                content: row.content,
-                metadata: row.metadata
-            }))
+            .map((row: Record<string, unknown>) => {
+                const meta = this.toMetadata(row.metadata);
+                const mappedType = typeof meta.type === 'string' ? meta.type : 'uploaded';
+                const type: 'internal' | 'past' | 'uploaded' =
+                    mappedType === 'internal' || mappedType === 'past' || mappedType === 'uploaded' ? mappedType : 'uploaded';
+                const skills = Array.isArray(meta.skills) ? meta.skills.map((s) => String(s)) : [];
+                return {
+                    id: typeof meta.id === 'string' ? meta.id : `unknown-${String(row.id ?? 'candidate')}`,
+                    name: typeof meta.name === 'string' ? meta.name : 'Unknown',
+                    email: typeof meta.email === 'string' ? meta.email : undefined,
+                    type,
+                    skills,
+                    similarity: typeof row.similarity === 'number' ? row.similarity : 0,
+                    content: typeof row.content === 'string' ? row.content : '',
+                    metadata: meta
+                };
+            })
             .filter((r: SemanticSearchResult) => r.id !== candidateId);
 
         return ok(results.slice(0, options.limit || 10));

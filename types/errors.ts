@@ -16,6 +16,8 @@ export type AppErrorContext = Partial<{
   jobId: string;
   candidateId: string;
   correlationId: string;
+  serviceName: string;
+  operationName: string;
 }>;
 
 export interface AppError {
@@ -29,6 +31,23 @@ export interface AppError {
   cause?: unknown; // admin-only
 }
 
+export class NetworkError extends Error {
+  status?: number;
+  endpoint?: string;
+
+  constructor(message: string, status?: number, endpoint?: string) {
+    super(message);
+    this.name = 'NetworkError';
+    this.status = status;
+    this.endpoint = endpoint;
+  }
+
+  isRetryable(): boolean {
+    if (typeof this.status !== 'number') return true;
+    return this.status >= 500 || this.status === 408 || this.status === 429;
+  }
+}
+
 export function formatError(error: AppError | string | unknown): string {
   if (!error) return 'Unknown error';
   if (typeof error === 'string') return error;
@@ -39,4 +58,3 @@ export function formatError(error: AppError | string | unknown): string {
     return 'Unknown error';
   }
 }
-

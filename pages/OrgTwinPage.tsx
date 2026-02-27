@@ -6,6 +6,7 @@ import type { OrgTwinTemplateId } from '../data/orgTwinTemplates';
 import { useData } from '../contexts/DataContext';
 import { useOrgTwinSupabaseCandidates } from '../hooks/useOrgTwinSupabaseCandidates';
 import { Building2, ChevronRight, ChevronDown, Activity, AlertOctagon, TrendingUp, Users, MapPin, Zap, ArrowRight, Globe, Layers, Database, RefreshCw } from 'lucide-react';
+import { TIMING } from '../config/timing';
 
 // --- Components ---
 
@@ -283,7 +284,7 @@ const OrgTwinPage: React.FC = () => {
             const results = orgTwinService.runScenarioSimulation(templateId, scenarioId);
             setScenarioResults(results);
             setIsSimulating(false);
-        }, 800);
+        }, TIMING.ORG_TWIN_SIMULATION_DELAY_MS);
     };
 
     return (

@@ -20,6 +20,7 @@ import { outreachDraftService } from './OutreachDraftService';
 import { truthCheckService, detectGenericAnswer, type TruthCheckQuestion } from './TruthCheckService';
 import { toCandidateSnapshot, toJobSnapshot } from '../utils/snapshots';
 import { agenticTools } from './AgenticSearchTools';
+import { TIMING } from '../config/timing';
 
 export interface ScreeningCandidate {
     candidateId: string;
@@ -270,7 +271,7 @@ class AutonomousScreeningAgent {
                                     experience: 0,
                                     location: '',
                                     availability: ''
-                                } as any,
+                                },
                                 jobId: candidate.jobId,
                                 stage: 'long_list'
                             },
@@ -352,7 +353,7 @@ class AutonomousScreeningAgent {
                                     experience: 0,
                                     location: '',
                                     availability: ''
-                                } as any,
+                                },
                                 jobId: candidate.jobId,
                                 stage: 'rejected'
                             },
@@ -589,7 +590,7 @@ class AutonomousScreeningAgent {
         // Extract top skills from these peers
         const peers = res.data.results;
         const skillCounts = new Map<string, number>();
-        peers.forEach((p: any) => {
+        peers.forEach((p) => {
             if (Array.isArray(p.skills)) {
                 p.skills.forEach((s: string) => skillCounts.set(s, (skillCounts.get(s) || 0) + 1));
             }
@@ -626,7 +627,7 @@ class AutonomousScreeningAgent {
             results.push({ question, answer, score });
 
             // Simulate delay
-            await new Promise(resolve => setTimeout(resolve, 200));
+            await new Promise(resolve => setTimeout(resolve, TIMING.SCREENING_SIMULATED_RESPONSE_DELAY_MS));
         }
 
         return results;
@@ -683,7 +684,7 @@ class AutonomousScreeningAgent {
                 : answer;
 
             results.push({ question: q.question, answer: finalAnswer, score });
-            await new Promise(resolve => setTimeout(resolve, 200));
+            await new Promise(resolve => setTimeout(resolve, TIMING.SCREENING_SIMULATED_RESPONSE_DELAY_MS));
         }
 
         return results;
@@ -694,7 +695,7 @@ class AutonomousScreeningAgent {
      */
     private async generateSummary(
         candidate: ScreeningCandidate,
-        qaResults: any[],
+        qaResults: Array<{ question: string; answer: string; score: number }>,
         avgScore: number
     ): Promise<string> {
 

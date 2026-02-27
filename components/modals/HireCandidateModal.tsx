@@ -3,14 +3,17 @@ import type { Job, Candidate } from '../../types';
 import { X, Award } from 'lucide-react';
 
 interface HireCandidateModalProps {
+  isOpen?: boolean;
   job: Job;
   candidates: Candidate[];
   onClose: () => void;
   onHire: (candidateId: string, jobId: string) => void;
 }
 
-const HireCandidateModal: React.FC<HireCandidateModalProps> = ({ job, candidates, onClose, onHire }) => {
+const HireCandidateModal: React.FC<HireCandidateModalProps> = ({ isOpen = true, job, candidates, onClose, onHire }) => {
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
+
+  if (!isOpen) return null;
 
   const handleSubmit = () => {
     if (selectedCandidateId) {

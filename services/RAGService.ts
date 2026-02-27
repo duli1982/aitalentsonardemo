@@ -34,8 +34,35 @@ export interface RAGResult {
     timestamp: Date;
 }
 
+type RAGCandidate = {
+    id: string;
+    name: string;
+    title: string;
+    similarity: number;
+    location?: string;
+    yearsOfExperience?: number | string;
+    skills?: string[];
+    resumeSummary?: string;
+    linkedinUrl?: string;
+    role?: string;
+    [key: string]: unknown;
+};
+
+function asRecord(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+}
+
+function readLinkedName(value: unknown): string {
+    if (Array.isArray(value)) {
+        const first = asRecord(value[0]);
+        return typeof first.name === 'string' ? first.name : '';
+    }
+    const rec = asRecord(value);
+    return typeof rec.name === 'string' ? rec.name : '';
+}
+
 class RAGService {
-    private log(...args: any[]) {
+    private log(...args: unknown[]) {
         if (import.meta.env.DEV) console.log(...args);
     }
 
@@ -48,7 +75,7 @@ class RAGService {
         this.log(`[RAGService] Processing query: "${query}"`);
 
         // Step 1: Tool Selection (Agentic Retrieval)
-        let searchResults: any[] = [];
+        let searchResults: RAGCandidate[] = [];
         let usedTool = 'vector';
 
         // Simple Heuristic: Check for specific entities (in a real agent, the LLM decides this)
@@ -70,12 +97,22 @@ class RAGService {
         }
 
         if (toolRes.success) {
-            searchResults = toolRes.data.results.map((r: any) => ({
-                ...r,
-                // Ensure compatibility with downstream RAG logic
-                similarity: r.similarity ?? (usedTool.includes('keyword') ? 1.0 : 0),
-                title: r.role || r.title || 'Candidate'
-            }));
+            searchResults = toolRes.data.results.map((result) => {
+                const r = asRecord(result);
+                const similarity = typeof r.similarity === 'number'
+                    ? r.similarity
+                    : (usedTool.includes('keyword') ? 1.0 : 0);
+                const title = typeof r.role === 'string'
+                    ? r.role
+                    : (typeof r.title === 'string' ? r.title : 'Candidate');
+                return {
+                    ...r,
+                    similarity,
+                    title,
+                    id: String(r.id ?? ''),
+                    name: String(r.name ?? 'Unknown')
+                } as RAGCandidate;
+            });
         } else {
             console.warn(`[RAGService] Tool ${usedTool} failed:`, toolRes.error);
         }
@@ -115,7 +152,7 @@ class RAGService {
     /**
      * Build context string from search results with graph relationships
      */
-    private async buildContext(searchResults: any[]): Promise<string> {
+    private async buildContext(searchResults: RAGCandidate[]): Promise<string> {
         let context = "Here are the relevant candidate profiles from the database:\n\n";
 
         for (let index = 0; index < searchResults.length; index++) {
@@ -189,17 +226,26 @@ class RAGService {
                 .limit(5)
         ]);
 
-        const companies = companiesData.data?.map(row =>
-            `${row.title} at ${(row.companies as any).name}${row.is_current ? ' (Current)' : ''}`
-        ) || [];
+        const companies = companiesData.data?.map((row) => {
+            const rec = asRecord(row);
+            const title = typeof rec.title === 'string' ? rec.title : '';
+            const companyName = readLinkedName(rec.companies);
+            const isCurrent = Boolean(rec.is_current);
+            return `${title} at ${companyName}${isCurrent ? ' (Current)' : ''}`;
+        }) || [];
 
-        const schools = schoolsData.data?.map(row =>
-            `${row.degree} from ${(row.schools as any).name} (${row.graduation_year})`
-        ) || [];
+        const schools = schoolsData.data?.map((row) => {
+            const rec = asRecord(row);
+            const degree = typeof rec.degree === 'string' ? rec.degree : '';
+            const schoolName = readLinkedName(rec.schools);
+            return `${degree} from ${schoolName} (${String(rec.graduation_year ?? '')})`;
+        }) || [];
 
-        const topSkills = skillsData.data?.map(row =>
-            `${(row.skills as any).name} (${row.proficiency_level})`
-        ) || [];
+        const topSkills = skillsData.data?.map((row) => {
+            const rec = asRecord(row);
+            const skillName = readLinkedName(rec.skills);
+            return `${skillName} (${String(rec.proficiency_level ?? '')})`;
+        }) || [];
 
         return { companies, schools, topSkills };
     }
@@ -209,7 +255,7 @@ class RAGService {
      */
     private async generateResponse(
         query: string,
-        searchResults: any[],
+        searchResults: RAGCandidate[],
         context: string
     ): Promise<{ text: string; mode: 'ai' | 'template' }> {
         const template = this.generateTemplateResponse(query, searchResults);
@@ -254,7 +300,7 @@ Your response:`;
         return { mode: 'ai', text: result.data };
     }
 
-    private generateTemplateResponse(query: string, searchResults: any[]): string {
+    private generateTemplateResponse(query: string, searchResults: RAGCandidate[]): string {
         const candidates = (searchResults || []).slice(0, 5);
         const top = candidates[0];
 
@@ -269,7 +315,7 @@ Your response:`;
         const company = companyMatch?.[1]?.trim();
 
         const candidateBullets = candidates
-            .map((c: any, idx: number) => {
+            .map((c, idx: number) => {
                 const skills = Array.isArray(c.skills) ? c.skills.slice(0, 6).join(', ') : '';
                 const loc = c.location ? ` • ${c.location}` : '';
                 return `#${idx + 1} ${c.name} — ${c.title}${loc} (${Math.round((c.similarity ?? 0) * 100)}%)${skills ? `\n- Skills: ${skills}` : ''}`;
@@ -297,8 +343,8 @@ Your response:`;
 
         if (wantsQuestions) {
             const skillPool = candidates
-                .flatMap((c: any) => (Array.isArray(c.skills) ? c.skills : []))
-                .map((s: any) => String(s))
+                .flatMap((c) => (Array.isArray(c.skills) ? c.skills : []))
+                .map((s) => String(s))
                 .filter(Boolean);
             const uniqueSkills = Array.from(new Set(skillPool)).slice(0, 8);
             const focus = uniqueSkills.length ? ` (focus: ${uniqueSkills.join(', ')})` : '';

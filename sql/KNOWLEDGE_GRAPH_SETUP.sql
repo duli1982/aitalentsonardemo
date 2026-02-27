@@ -373,19 +373,12 @@ BEGIN
         'candidate_reporting'
     ]
     LOOP
-        IF NOT EXISTS (
-            SELECT 1
-            FROM pg_policies
-            WHERE schemaname = 'public'
-              AND tablename = t
-              AND policyname = policy_name
-        ) THEN
-            EXECUTE format(
-                'CREATE POLICY %I ON public.%I FOR ALL TO authenticated USING (true) WITH CHECK (true);',
-                policy_name,
-                t
-            );
-        END IF;
+        EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I;', policy_name, t);
+        EXECUTE format(
+            'CREATE POLICY %I ON public.%I FOR ALL TO authenticated USING (auth.role() = ''authenticated'') WITH CHECK (auth.role() = ''authenticated'');',
+            policy_name,
+            t
+        );
     END LOOP;
 END $$;
 

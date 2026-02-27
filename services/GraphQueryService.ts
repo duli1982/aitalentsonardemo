@@ -61,6 +61,22 @@ export interface SkillCluster {
     candidate_count: number;
 }
 
+type CandidateDocumentMeta = {
+    name?: string;
+    title?: string;
+    email?: string;
+};
+
+function extractCandidateMeta(value: unknown): CandidateDocumentMeta {
+    const candidateDocuments = value as { metadata?: unknown } | null | undefined;
+    const metadata = candidateDocuments?.metadata as Record<string, unknown> | undefined;
+    return {
+        name: typeof metadata?.name === 'string' ? metadata.name : undefined,
+        title: typeof metadata?.title === 'string' ? metadata.title : undefined,
+        email: typeof metadata?.email === 'string' ? metadata.email : undefined
+    };
+}
+
 class GraphQueryService {
     /**
      * Find candidates who worked at a specific company
@@ -90,14 +106,16 @@ class GraphQueryService {
             return err(upstream('GraphQueryService', 'Error finding candidates by company.', error), { data: [] });
         }
 
-        return ok(data.map(row => ({
+        return ok(data.map(row => {
+            const meta = extractCandidateMeta(row.candidate_documents);
+            return {
             candidate_id: row.candidate_id,
-            candidate_name: (row.candidate_documents as any).metadata.name,
+            candidate_name: meta.name ?? 'Unknown',
             candidate_title: row.title,
-            candidate_email: (row.candidate_documents as any).metadata.email,
+            candidate_email: meta.email ?? '',
             relationship_type: 'worked_at',
             relationship_context: `${row.title} at ${companyName} (${row.start_date} - ${row.is_current ? 'Present' : row.end_date})`
-        })));
+        }; }));
     }
 
     /**
@@ -127,14 +145,16 @@ class GraphQueryService {
             return err(upstream('GraphQueryService', 'Error finding candidates by school.', error), { data: [] });
         }
 
-        return ok(data.map(row => ({
+        return ok(data.map(row => {
+            const meta = extractCandidateMeta(row.candidate_documents);
+            return {
             candidate_id: row.candidate_id,
-            candidate_name: (row.candidate_documents as any).metadata.name,
-            candidate_title: (row.candidate_documents as any).metadata.title,
-            candidate_email: (row.candidate_documents as any).metadata.email,
+            candidate_name: meta.name ?? 'Unknown',
+            candidate_title: meta.title ?? '',
+            candidate_email: meta.email ?? '',
             relationship_type: 'studied_at',
             relationship_context: `${row.degree} in ${row.field_of_study} from ${schoolName} (${row.graduation_year})`
-        })));
+        }; }));
     }
 
     /**
@@ -177,14 +197,16 @@ class GraphQueryService {
             return err(upstream('GraphQueryService', 'Error finding candidates by skill.', error), { data: [] });
         }
 
-        return ok(data.map(row => ({
+        return ok(data.map(row => {
+            const meta = extractCandidateMeta(row.candidate_documents);
+            return {
             candidate_id: row.candidate_id,
-            candidate_name: (row.candidate_documents as any).metadata.name,
-            candidate_title: (row.candidate_documents as any).metadata.title,
-            candidate_email: (row.candidate_documents as any).metadata.email,
+            candidate_name: meta.name ?? 'Unknown',
+            candidate_title: meta.title ?? '',
+            candidate_email: meta.email ?? '',
             relationship_type: 'has_skill',
             relationship_context: `${skillName} - ${row.proficiency_level} (${row.years_of_experience} years)`
-        })));
+        }; }));
     }
 
     /**
@@ -247,14 +269,16 @@ class GraphQueryService {
             return err(upstream('GraphQueryService', 'Error loading candidate documents for criteria.', error), { data: [] });
         }
 
-        return ok(data.map(row => ({
+        return ok(data.map(row => {
+            const metadata = row.metadata as Record<string, unknown> | null | undefined;
+            return {
             candidate_id: row.id,
-            candidate_name: row.metadata.name,
-            candidate_title: row.metadata.title,
-            candidate_email: row.metadata.email,
+            candidate_name: typeof metadata?.name === 'string' ? metadata.name : 'Unknown',
+            candidate_title: typeof metadata?.title === 'string' ? metadata.title : '',
+            candidate_email: typeof metadata?.email === 'string' ? metadata.email : '',
             relationship_type: 'multi_criteria',
             relationship_context: `Matches: ${criteria.companies?.join(', ') || ''} ${criteria.schools?.join(', ') || ''} ${criteria.skills?.join(', ') || ''}`
-        })));
+        }; }));
     }
 
     /**
@@ -322,7 +346,9 @@ class GraphQueryService {
         // Count skill occurrences
         const skillCounts: Record<string, number> = {};
         relatedSkillsData.forEach(row => {
-            const skillName = (row.skills as any).name;
+            const skill = row.skills as { name?: string } | null | undefined;
+            const skillName = typeof skill?.name === 'string' ? skill.name : null;
+            if (!skillName) return;
             skillCounts[skillName] = (skillCounts[skillName] || 0) + 1;
         });
 
@@ -373,14 +399,17 @@ class GraphQueryService {
             return ok([]);
         }
 
-        return ok(connections.map(row => ({
+        return ok(connections.map(row => {
+            const meta = extractCandidateMeta(row.candidate_documents);
+            const company = row.companies as { name?: string } | null | undefined;
+            return {
             candidate_id: row.candidate_id,
-            candidate_name: (row.candidate_documents as any).metadata.name,
+            candidate_name: meta.name ?? 'Unknown',
             candidate_title: row.title,
-            candidate_email: (row.candidate_documents as any).metadata.email,
+            candidate_email: meta.email ?? '',
             relationship_type: '2nd_degree',
-            relationship_context: `Both worked at ${(row.companies as any).name}`
-        })));
+            relationship_context: `Both worked at ${company?.name ?? 'Unknown company'}`
+        }; }));
     }
 
     /**

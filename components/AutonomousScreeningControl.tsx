@@ -6,17 +6,30 @@ import { useAllSupabaseCandidates } from '../hooks/useAllSupabaseCandidates';
 import { autonomousScreeningAgent, type ScreeningResult } from '../services/AutonomousScreeningAgent';
 import { agentSettingsService } from '../services/AgentSettingsService';
 import { toCandidateSnapshot, toJobSnapshot } from '../utils/snapshots';
+import { TIMING } from '../config/timing';
 
 interface AutonomousScreeningControlProps {
     jobs: Job[];
 }
 
-const formatTime = (date: Date | null) => {
+type ScreeningAgentStatus = ReturnType<typeof autonomousScreeningAgent.getStatus>;
+type ResultsOutcome = 'all' | 'pass' | 'fail';
+
+function isPipelineStage(value: string): value is PipelineStage {
+    return ['sourced', 'new', 'long_list', 'screening', 'scheduling', 'interview', 'offer', 'hired', 'rejected'].includes(value);
+}
+
+function normalizePipelineStage(raw: string): PipelineStage {
+    const canonical = raw === 'sourcing' || raw === 'contacted' ? 'new' : raw;
+    return isPipelineStage(canonical) ? canonical : 'new';
+}
+
+const formatTime = (date: Date | null | undefined) => {
     if (!date) return 'Never';
     return new Date(date).toLocaleString();
 };
 
-const formatNextRun = (date: Date | null) => {
+const formatNextRun = (date: Date | null | undefined) => {
     if (!date) return 'Disabled';
     const now = Date.now();
     const next = new Date(date).getTime();
@@ -32,7 +45,7 @@ const formatNextRun = (date: Date | null) => {
 const AutonomousScreeningControl: React.FC<AutonomousScreeningControlProps> = ({ jobs }) => {
     const { internalCandidates, pastCandidates, uploadedCandidates } = useData();
 
-    const [status, setStatus] = useState<any>(null);
+    const [status, setStatus] = useState<ScreeningAgentStatus | null>(null);
     const [isRefreshing, setIsRefreshing] = useState(false);
 
     const [jobId, setJobId] = useState<string>('');
@@ -44,7 +57,7 @@ const AutonomousScreeningControl: React.FC<AutonomousScreeningControlProps> = ({
     const [manualCandidateEmail, setManualCandidateEmail] = useState('');
     const [showAllResults, setShowAllResults] = useState(false);
     const [resultsSearch, setResultsSearch] = useState('');
-    const [resultsOutcome, setResultsOutcome] = useState<'all' | 'pass' | 'fail'>('all');
+    const [resultsOutcome, setResultsOutcome] = useState<ResultsOutcome>('all');
     const [showAllResultCards, setShowAllResultCards] = useState(false);
     const [selectedResultId, setSelectedResultId] = useState<string | null>(null);
 
@@ -64,8 +77,8 @@ const AutonomousScreeningControl: React.FC<AutonomousScreeningControlProps> = ({
                 const matchScore = candidate.matchScores?.[jobId];
                 if (!matchScore) return false;
 
-                const rawStage = (candidate as any).pipelineStage?.[jobId] || 'new';
-                const stage = (((rawStage === 'sourcing' || rawStage === 'contacted') ? 'new' : rawStage) as PipelineStage);
+                const rawStage = candidate.pipelineStage?.[jobId] || 'new';
+                const stage = normalizePipelineStage(rawStage);
                 if (pipelineStageFilter !== 'all' && stage !== pipelineStageFilter) return false;
 
                 if (!normalizedQuery) return true;
@@ -131,8 +144,8 @@ const AutonomousScreeningControl: React.FC<AutonomousScreeningControlProps> = ({
         const normalizedQuery = resultsSearch.trim().toLowerCase();
 
         return [...results]
-            .sort((a: any, b: any) => new Date(b.screenedAt).getTime() - new Date(a.screenedAt).getTime())
-            .filter((r: any) => {
+            .sort((a, b) => new Date(b.screenedAt).getTime() - new Date(a.screenedAt).getTime())
+            .filter((r) => {
                 if (resultsOutcome === 'pass' && !r.passed) return false;
                 if (resultsOutcome === 'fail' && r.passed) return false;
                 if (!normalizedQuery) return true;
@@ -186,7 +199,7 @@ const AutonomousScreeningControl: React.FC<AutonomousScreeningControlProps> = ({
         autonomousScreeningAgent.initialize({ enabled: settings.enabled, mode: settings.mode });
         const refresh = () => setStatus(autonomousScreeningAgent.getStatus());
         refresh();
-        const interval = setInterval(refresh, 30000);
+        const interval = setInterval(refresh, TIMING.SCREENING_CONTROL_REFRESH_INTERVAL_MS);
         return () => clearInterval(interval);
     }, []);
 
@@ -198,14 +211,14 @@ const AutonomousScreeningControl: React.FC<AutonomousScreeningControlProps> = ({
         const newState = !status?.enabled;
         agentSettingsService.setEnabled('screening', newState);
         autonomousScreeningAgent.setEnabled(newState);
-        setTimeout(() => setStatus(autonomousScreeningAgent.getStatus()), 100);
+        setTimeout(() => setStatus(autonomousScreeningAgent.getStatus()), TIMING.UI_DELAY_MS);
     };
 
     const handleManualRun = async () => {
         setIsRefreshing(true);
         try {
             await autonomousScreeningAgent.triggerScreening();
-            setTimeout(() => setStatus(autonomousScreeningAgent.getStatus()), 250);
+            setTimeout(() => setStatus(autonomousScreeningAgent.getStatus()), TIMING.MEDIUM_UI_DELAY_MS);
         } finally {
             setIsRefreshing(false);
         }
@@ -256,7 +269,7 @@ const AutonomousScreeningControl: React.FC<AutonomousScreeningControlProps> = ({
             queueCandidate(candidate);
         }
 
-        setTimeout(() => setStatus(autonomousScreeningAgent.getStatus()), 50);
+        setTimeout(() => setStatus(autonomousScreeningAgent.getStatus()), TIMING.FAST_UI_DELAY_MS);
     };
 
     if (!status) return <div className="text-slate-400">Loading screening agent status...</div>;
@@ -439,7 +452,7 @@ const AutonomousScreeningControl: React.FC<AutonomousScreeningControlProps> = ({
                                 <label className="block text-xs text-slate-400 mb-1">Pipeline Stage</label>
                                 <select
                                     value={pipelineStageFilter}
-                                    onChange={(e) => setPipelineStageFilter(e.target.value as any)}
+                                    onChange={(e) => setPipelineStageFilter(e.target.value === 'all' ? 'all' : normalizePipelineStage(e.target.value))}
                                     className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg px-3 py-2 text-sm"
                                 >
                                     <option value="all">All stages</option>
@@ -465,8 +478,8 @@ const AutonomousScreeningControl: React.FC<AutonomousScreeningControlProps> = ({
                             ) : (
                                 <div className="divide-y divide-slate-800">
                                     {pipelineCandidatesForJob.slice(0, 50).map((candidate) => {
-                                        const rawStage = (candidate as any).pipelineStage?.[jobId] || 'new';
-                                        const stage = (((rawStage === 'sourcing' || rawStage === 'contacted') ? 'new' : rawStage) as PipelineStage);
+                                        const rawStage = candidate.pipelineStage?.[jobId] || 'new';
+                                        const stage = normalizePipelineStage(rawStage);
                                         const score = candidate.matchScores?.[jobId] || 0;
                                         const email = candidate.email || '';
                                         const selected = selectedCandidateId === candidate.id;
@@ -642,7 +655,7 @@ const AutonomousScreeningControl: React.FC<AutonomousScreeningControlProps> = ({
                             </div>
                             <select
                                 value={resultsOutcome}
-                                onChange={(e) => setResultsOutcome(e.target.value as any)}
+                                onChange={(e) => setResultsOutcome(e.target.value === 'pass' || e.target.value === 'fail' ? e.target.value : 'all')}
                                 className="bg-slate-900 border border-slate-700 text-white rounded-lg px-3 py-2 text-sm"
                             >
                                 <option value="all">All</option>
@@ -660,7 +673,7 @@ const AutonomousScreeningControl: React.FC<AutonomousScreeningControlProps> = ({
                     </div>
 
                     <div className="space-y-3">
-                        {visibleResults.map((r: any) => (
+                        {visibleResults.map((r) => (
                             <div key={r.id} className="bg-slate-900/50 rounded-lg p-4 border border-slate-700">
                                 <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-2">
                                     <div>

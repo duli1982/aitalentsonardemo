@@ -24,7 +24,11 @@ const AutoTagModal: React.FC<AutoTagModalProps> = ({ isOpen, onClose, candidate,
     const generateTags = async () => {
         setIsLoading(true);
         try {
-            const result = await geminiService.generateCandidateTags(candidate);
+            const response = await geminiService.generateCandidateTagsResult(candidate);
+            if (!response.success && 'error' in response) {
+                throw new Error(response.error.message);
+            }
+            const result = response.data;
             setTagging(result);
             // Auto-select high-confidence tags
             const autoSelected = result.tags

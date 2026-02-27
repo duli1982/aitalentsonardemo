@@ -3,6 +3,7 @@ import { Activity, AlertCircle, BarChart3, Clock, Pause, Play, RefreshCw, Trendi
 import { autonomousAnalyticsAgent, PipelineSnapshot, AnalyticsAlert } from '../services/AutonomousAnalyticsAgent';
 import { useData } from '../contexts/DataContext';
 import { agentSettingsService } from '../services/AgentSettingsService';
+import { TIMING } from '../config/timing';
 
 interface AutonomousAnalyticsControlProps {
     jobs: any[];
@@ -55,7 +56,7 @@ const AutonomousAnalyticsControl: React.FC<AutonomousAnalyticsControlProps> = ({
         autonomousAnalyticsAgent.initialize(jobs, allCandidates, { enabled: settings.enabled, mode: settings.mode });
         refresh();
 
-        const interval = setInterval(refresh, 30000);
+        const interval = setInterval(refresh, TIMING.ANALYTICS_CONTROL_REFRESH_INTERVAL_MS);
         return () => clearInterval(interval);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [jobs, allCandidates.length]);
@@ -80,14 +81,14 @@ const AutonomousAnalyticsControl: React.FC<AutonomousAnalyticsControlProps> = ({
         const enabled = !status?.enabled;
         agentSettingsService.setEnabled('analytics', enabled);
         autonomousAnalyticsAgent.setEnabled(enabled);
-        setTimeout(refresh, 100);
+        setTimeout(refresh, TIMING.UI_DELAY_MS);
     };
 
     const handleManualRun = async () => {
         setIsRunning(true);
         try {
             await autonomousAnalyticsAgent.triggerRun(jobs, allCandidates);
-            setTimeout(refresh, 500);
+            setTimeout(refresh, TIMING.LONG_UI_DELAY_MS);
         } finally {
             setIsRunning(false);
         }

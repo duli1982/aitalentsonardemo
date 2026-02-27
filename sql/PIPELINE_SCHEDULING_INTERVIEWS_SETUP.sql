@@ -85,32 +85,31 @@ CREATE POLICY "scheduled_interviews_authenticated_all"
 ON scheduled_interviews
 FOR ALL
 TO authenticated
-USING (true)
-WITH CHECK (true);
+USING (auth.role() = 'authenticated')
+WITH CHECK (auth.role() = 'authenticated');
 
 DROP POLICY IF EXISTS "interview_sessions_authenticated_all" ON interview_sessions;
 CREATE POLICY "interview_sessions_authenticated_all"
 ON interview_sessions
 FOR ALL
 TO authenticated
-USING (true)
-WITH CHECK (true);
+USING (auth.role() = 'authenticated')
+WITH CHECK (auth.role() = 'authenticated');
 
--- Anon access (useful for local/demo apps using the public anon key)
--- If you don't want anon to write in production, remove these policies.
 DROP POLICY IF EXISTS "scheduled_interviews_anon_all" ON scheduled_interviews;
-CREATE POLICY "scheduled_interviews_anon_all"
-ON scheduled_interviews
-FOR ALL
-TO anon
-USING (true)
-WITH CHECK (true);
+-- Optional for local/demo only:
+-- CREATE POLICY "scheduled_interviews_anon_all"
+-- ON scheduled_interviews
+-- FOR ALL
+-- TO anon
+-- USING (true)
+-- WITH CHECK (true);
 
 DROP POLICY IF EXISTS "interview_sessions_anon_all" ON interview_sessions;
-CREATE POLICY "interview_sessions_anon_all"
-ON interview_sessions
-FOR ALL
-TO anon
-USING (true)
-WITH CHECK (true);
-
+-- Optional for local/demo only:
+-- CREATE POLICY "interview_sessions_anon_all"
+-- ON interview_sessions
+-- FOR ALL
+-- TO anon
+-- USING (true)
+-- WITH CHECK (true);

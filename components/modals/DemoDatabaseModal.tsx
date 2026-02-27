@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import type { UploadedCandidate } from '../../types';
 import { X, Database, Users, TrendingUp, MapPin, Award, Loader2, CheckCircle } from 'lucide-react';
 import * as demoService from '../../services/demoDatabaseService';
+import { TIMING } from '../../config/timing';
 
 interface DemoDatabaseModalProps {
   onClose: () => void;
@@ -35,7 +36,7 @@ const DemoDatabaseModal: React.FC<DemoDatabaseModalProps> = ({ onClose, onLoadCa
       // Auto-close after 2 seconds
       setTimeout(() => {
         onClose();
-      }, 2000);
+      }, TIMING.DEMO_DATABASE_MODAL_CLOSE_DELAY_MS);
     } catch (error) {
       console.error('Failed to load demo database:', error);
       setLoadStatus('idle');

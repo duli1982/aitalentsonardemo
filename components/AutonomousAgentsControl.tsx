@@ -6,6 +6,7 @@ import { agentSettingsService } from '../services/AgentSettingsService';
 import { proposedActionService, type ProposedAction, type ProposedActionStatus } from '../services/ProposedActionService';
 import { eventBus, EVENTS } from '../utils/EventBus';
 import ConfirmModal from './modals/ConfirmModal';
+import { TIMING } from '../config/timing';
 
 interface AutonomousAgentsControlProps {
     jobs: any[];
@@ -33,8 +34,7 @@ const AutonomousAgentsControl: React.FC<AutonomousAgentsControlProps> = ({ jobs 
         refreshStatus();
         refreshProposalCounts();
 
-        // Refresh status every 30 seconds
-        const interval = setInterval(refreshStatus, 30000);
+        const interval = setInterval(refreshStatus, TIMING.AGENT_STATUS_REFRESH_INTERVAL_MS);
         const proposalsSub = eventBus.on(EVENTS.PROPOSED_ACTIONS_CHANGED, refreshProposalCounts);
         return () => {
             clearInterval(interval);
@@ -101,14 +101,14 @@ const AutonomousAgentsControl: React.FC<AutonomousAgentsControlProps> = ({ jobs 
         const newState = !status?.enabled;
         agentSettingsService.setEnabled('sourcing', newState);
         autonomousSourcingAgent.setEnabled(newState);
-        setTimeout(refreshStatus, 100);
+        setTimeout(refreshStatus, TIMING.UI_DELAY_MS);
     };
 
     const handleManualScan = async () => {
         setIsRefreshing(true);
         try {
             await autonomousSourcingAgent.triggerScan(jobs);
-            setTimeout(refreshStatus, 1000);
+            setTimeout(refreshStatus, TIMING.EXTRA_LONG_UI_DELAY_MS);
         } catch (error) {
             console.error('Manual scan failed:', error);
         } finally {

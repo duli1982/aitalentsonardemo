@@ -1,14 +1,17 @@
 import { useState, useCallback } from 'react';
-import type { Job, Candidate, AnalysisResult, FitAnalysis } from '../types';
+import type { Job, Candidate, FitAnalysis, PipelineStage } from '../types';
 import * as geminiService from '../services/geminiService';
 import { evidencePackService } from '../services/EvidencePackService';
 import { outreachDraftService } from '../services/OutreachDraftService';
 import { jobContextPackService } from '../services/JobContextPackService';
+import type { Result } from '../types/result';
+import { toCandidateSnapshot, toJobSnapshot } from '../utils/snapshots';
+import { TIMING } from '../config/timing';
 
 interface UseAnalysisProps {
     selectedJob: Job | undefined;
     onUpdateCandidate: (candidateId: string, updatedData: Partial<Candidate>) => void;
-    onUpdateCandidateStage: (candidateId: string, jobId: string, newStage: any) => void;
+    onUpdateCandidateStage: (candidateId: string, jobId: string, newStage: PipelineStage) => void;
 }
 
 export const useAnalysis = ({ selectedJob, onUpdateCandidate, onUpdateCandidateStage }: UseAnalysisProps) => {
@@ -18,12 +21,19 @@ export const useAnalysis = ({ selectedJob, onUpdateCandidate, onUpdateCandidateS
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
     const [isBatchAnalyzing, setIsBatchAnalyzing] = useState(false);
     const [batchAnalysisProgress, setBatchAnalysisProgress] = useState({ current: 0, total: 0 });
-    const [analysisState, setAnalysisState] = useState<{ type: string; candidate?: Candidate; result: any }>({ type: '', result: null });
+    const [analysisState, setAnalysisState] = useState<{ type: string; candidate?: Candidate; result: unknown }>({ type: '', result: null });
     const [isAnalysisModalOpen, setAnalysisModalOpen] = useState(false);
+
+    const requireSuccess = useCallback(<T,>(result: Result<T>): T => {
+        if (!result.success && 'error' in result) {
+            throw new Error(result.error.message);
+        }
+        return result.data;
+    }, []);
 
     const runFitAnalysis = useCallback(async (candidate: Candidate, job: Job): Promise<FitAnalysis | null> => {
         try {
-            const result = await geminiService.analyzeFit(job, candidate);
+            const result = requireSuccess(await geminiService.analyzeFitResult(job, candidate));
             const { matchScore, matchRationale } = result;
             onUpdateCandidate(candidate.id, {
                 matchScores: { ...(candidate.matchScores || {}), [job.id]: matchScore },
@@ -34,7 +44,7 @@ export const useAnalysis = ({ selectedJob, onUpdateCandidate, onUpdateCandidateS
             setError(e instanceof Error ? e.message : 'An unknown error occurred during fit analysis.');
             return null;
         }
-    }, [onUpdateCandidate]);
+    }, [onUpdateCandidate, requireSuccess]);
 
     const handleInitiateAnalysis = useCallback(async (type: string, target: Job | Candidate) => {
         if (!selectedJob) return;
@@ -48,40 +58,27 @@ export const useAnalysis = ({ selectedJob, onUpdateCandidate, onUpdateCandidateS
         setError(null);
 
         try {
-            let result: AnalysisResult | null = null;
+            let result: unknown = null;
             switch (type) {
-                case 'JOB_SUMMARY': result = await geminiService.analyzeJob(selectedJob); break;
+                case 'JOB_SUMMARY': result = requireSuccess(await geminiService.analyzeJobResult(selectedJob)); break;
                 case 'FIT_ANALYSIS': if (candidate) result = await runFitAnalysis(candidate, selectedJob); break;
-                case 'HIDDEN_GEM_ANALYSIS': if (candidate) result = await geminiService.analyzeHiddenGem(selectedJob, candidate); break;
+                case 'HIDDEN_GEM_ANALYSIS': if (candidate) result = requireSuccess(await geminiService.analyzeHiddenGemResult(selectedJob, candidate)); break;
                 case 'OUTREACH':
                     if (candidate) {
                         // Prefer evidence-pack grounded drafts (fallbacks are deterministic).
                         const contextPack = await jobContextPackService.get(selectedJob.id);
-                        const evidencePack = await evidencePackService.build({ job: selectedJob, candidate, contextPack });
-                        const draft = await outreachDraftService.build({ job: selectedJob, candidate, evidencePack, contextPack });
+                        const jobSnapshot = toJobSnapshot(selectedJob);
+                        const candidateSnapshot = toCandidateSnapshot(candidate);
+                        const evidencePack = await evidencePackService.build({ job: jobSnapshot, candidate: candidateSnapshot, contextPack });
+                        const draft = await outreachDraftService.build({ job: jobSnapshot, candidate: candidateSnapshot, evidencePack, contextPack });
                         result = draft.body;
                     }
                     break;
                 case 'INTERVIEW_GUIDE':
                     if (candidate) {
-                        // Ensure we have fit analysis data first
-                        let fitAnalysis = candidate.matchScores?.[selectedJob.id] ? {
-                            matchScore: candidate.matchScores[selectedJob.id],
-                            gaps: [], // We might need to fetch full analysis if not stored
-                            strengths: []
-                        } as any : null;
-
-                        // If we don't have full analysis data stored, we might need to re-run or fetch it.
-                        // For now, let's assume we run a quick fit analysis if missing, or use what we have.
-                        // Ideally, we should store the full FitAnalysis object in the candidate data.
-                        // Since we only store score and rationale, let's re-run fit analysis if needed or just use the service.
-                        // Actually, geminiService.generateInterviewGuide takes a FitAnalysis object.
-                        // Let's run fit analysis first if we don't have it, or just pass the candidate and let the service handle it?
-                        // The service expects FitAnalysis.
-
-                        // Strategy: Run analyzeFit first to get fresh data for the guide.
-                        fitAnalysis = await geminiService.analyzeFit(selectedJob, candidate);
-                        result = await geminiService.generateInterviewGuide(selectedJob, candidate, fitAnalysis);
+                        // Interview guide generation requires a complete fit analysis payload.
+                        const fitAnalysis = requireSuccess(await geminiService.analyzeFitResult(selectedJob, candidate));
+                        result = requireSuccess(await geminiService.generateInterviewGuideResult(selectedJob, candidate, fitAnalysis));
                     }
                     break;
             }
@@ -93,7 +90,7 @@ export const useAnalysis = ({ selectedJob, onUpdateCandidate, onUpdateCandidateS
             setIsLoading(false);
             setLoadingCandidateId(null);
         }
-    }, [selectedJob, runFitAnalysis, onUpdateCandidateStage]);
+    }, [selectedJob, runFitAnalysis, onUpdateCandidateStage, requireSuccess]);
 
     const handleBatchAnalysis = useCallback(async (candidates: Candidate[]) => {
         if (!selectedJob) return;
@@ -112,7 +109,7 @@ export const useAnalysis = ({ selectedJob, onUpdateCandidate, onUpdateCandidateS
             try {
                 await runFitAnalysis(candidate, selectedJob);
                 successCount++;
-                await new Promise(resolve => setTimeout(resolve, 500));
+                await new Promise(resolve => setTimeout(resolve, TIMING.ANALYSIS_PROGRESS_STEP_DELAY_MS));
             } catch (e) {
                 console.error(`Failed to analyze candidate ${candidate.name}:`, e);
                 failCount++;
@@ -127,7 +124,7 @@ export const useAnalysis = ({ selectedJob, onUpdateCandidate, onUpdateCandidateS
             : `Analyzed ${successCount} candidates successfully. ${failCount} analysis failed.`;
 
         setSuccessMessage(message);
-        setTimeout(() => setSuccessMessage(null), 8000);
+        setTimeout(() => setSuccessMessage(null), TIMING.ANALYSIS_SUCCESS_MESSAGE_MS);
 
         console.log(`🎯 Batch Analysis Complete: ${successCount} successful, ${failCount} failed`);
     }, [selectedJob, runFitAnalysis]);

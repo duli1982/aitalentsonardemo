@@ -51,16 +51,14 @@ CREATE POLICY "recruiting_scorecards_authenticated_all"
 ON recruiting_scorecards
 FOR ALL
 TO authenticated
-USING (true)
-WITH CHECK (true);
+USING (auth.role() = 'authenticated')
+WITH CHECK (auth.role() = 'authenticated');
 
--- Anon access (useful for local/demo apps using the public anon key)
--- If you don't want anon to write in production, remove this policy.
 DROP POLICY IF EXISTS "recruiting_scorecards_anon_all" ON recruiting_scorecards;
-CREATE POLICY "recruiting_scorecards_anon_all"
-ON recruiting_scorecards
-FOR ALL
-TO anon
-USING (true)
-WITH CHECK (true);
-
+-- Optional for local/demo only:
+-- CREATE POLICY "recruiting_scorecards_anon_all"
+-- ON recruiting_scorecards
+-- FOR ALL
+-- TO anon
+-- USING (true)
+-- WITH CHECK (true);

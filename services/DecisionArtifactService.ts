@@ -24,6 +24,31 @@ export interface DecisionArtifactRecord {
   createdAt: string;
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+}
+
+function mapArtifactRow(rowValue: unknown): DecisionArtifactRecord {
+  const row = asRecord(rowValue);
+  return {
+    id: String(row.id ?? ''),
+    candidateId: String(row.candidate_id ?? ''),
+    candidateName: typeof row.candidate_name === 'string' ? row.candidate_name : undefined,
+    jobId: String(row.job_id ?? ''),
+    jobTitle: typeof row.job_title === 'string' ? row.job_title : undefined,
+    decisionType: String(row.decision_type ?? 'screening') as DecisionType,
+    decision: String(row.decision ?? 'BORDERLINE') as DecisionValue,
+    score: typeof row.score === 'number' ? row.score : undefined,
+    confidence: typeof row.confidence === 'number' ? row.confidence : undefined,
+    summary: typeof row.summary === 'string' ? row.summary : undefined,
+    details: asRecord(row.details),
+    rubricId: typeof row.rubric_id === 'string' ? row.rubric_id : undefined,
+    rubricVersion: typeof row.rubric_version === 'number' ? row.rubric_version : undefined,
+    externalId: typeof row.external_id === 'string' ? row.external_id : undefined,
+    createdAt: String(row.created_at ?? '')
+  };
+}
+
 class DecisionArtifactService {
   async listArtifactsForCandidate(params: {
     candidateId: string;
@@ -47,23 +72,7 @@ class DecisionArtifactService {
 
     if (error || !data) return [];
 
-    return data.map((row: any): DecisionArtifactRecord => ({
-      id: row.id,
-      candidateId: row.candidate_id,
-      candidateName: row.candidate_name ?? undefined,
-      jobId: row.job_id,
-      jobTitle: row.job_title ?? undefined,
-      decisionType: row.decision_type as DecisionType,
-      decision: row.decision as DecisionValue,
-      score: typeof row.score === 'number' ? row.score : undefined,
-      confidence: typeof row.confidence === 'number' ? row.confidence : undefined,
-      summary: row.summary ?? undefined,
-      details: row.details ?? {},
-      rubricId: row.rubric_id ?? undefined,
-      rubricVersion: typeof row.rubric_version === 'number' ? row.rubric_version : undefined,
-      externalId: row.external_id ?? undefined,
-      createdAt: row.created_at
-    }));
+    return data.map((row) => mapArtifactRow(row));
   }
 
   async listArtifactsForJob(params: {
@@ -87,23 +96,7 @@ class DecisionArtifactService {
     const { data, error } = await query;
     if (error || !data) return [];
 
-    return data.map((row: any): DecisionArtifactRecord => ({
-      id: row.id,
-      candidateId: row.candidate_id,
-      candidateName: row.candidate_name ?? undefined,
-      jobId: row.job_id,
-      jobTitle: row.job_title ?? undefined,
-      decisionType: row.decision_type as DecisionType,
-      decision: row.decision as DecisionValue,
-      score: typeof row.score === 'number' ? row.score : undefined,
-      confidence: typeof row.confidence === 'number' ? row.confidence : undefined,
-      summary: row.summary ?? undefined,
-      details: row.details ?? {},
-      rubricId: row.rubric_id ?? undefined,
-      rubricVersion: typeof row.rubric_version === 'number' ? row.rubric_version : undefined,
-      externalId: row.external_id ?? undefined,
-      createdAt: row.created_at
-    }));
+    return data.map((row) => mapArtifactRow(row));
   }
 
   async saveScreeningResult(params: {
@@ -240,27 +233,31 @@ class DecisionArtifactService {
     if (error || !data) return [];
 
     return data
-      .map((row: any): ScreeningResult | null => {
-        const details = row.details ?? {};
+      .map((row): ScreeningResult | null => {
+        const rec = asRecord(row);
+        const details = asRecord(rec.details);
         const questions = Array.isArray(details.questions) ? details.questions : [];
-        const screenedAt = details.screenedAt || row.created_at;
+        const screenedAt = details.screenedAt || rec.created_at;
 
         return {
-          id: row.external_id || row.id,
-          candidateId: row.candidate_id,
-          candidateName: row.candidate_name || 'Candidate',
-          jobId: row.job_id,
-          jobTitle: row.job_title || 'Job',
-          score: typeof row.score === 'number' ? row.score : 0,
-          passed: Boolean(details.passed ?? (row.decision !== 'FAIL')),
-          questions: questions.map((q: any) => ({
-            question: String(q.question ?? ''),
-            answer: String(q.answer ?? ''),
-            score: Number(q.score ?? 0)
-          })),
-          recommendation: row.decision as ScreeningResult['recommendation'],
-          summary: String(row.summary ?? ''),
-          screenedAt: new Date(screenedAt)
+          id: String(rec.external_id || rec.id || ''),
+          candidateId: String(rec.candidate_id || ''),
+          candidateName: String(rec.candidate_name || 'Candidate'),
+          jobId: String(rec.job_id || ''),
+          jobTitle: String(rec.job_title || 'Job'),
+          score: typeof rec.score === 'number' ? rec.score : 0,
+          passed: Boolean(details.passed ?? (rec.decision !== 'FAIL')),
+          questions: questions.map((question) => {
+            const q = asRecord(question);
+            return {
+              question: String(q.question ?? ''),
+              answer: String(q.answer ?? ''),
+              score: Number(q.score ?? 0)
+            };
+          }),
+          recommendation: String(rec.decision || 'BORDERLINE') as ScreeningResult['recommendation'],
+          summary: String(rec.summary ?? ''),
+          screenedAt: new Date(String(screenedAt))
         };
       })
       .filter(Boolean) as ScreeningResult[];

@@ -1,6 +1,7 @@
 import React, { useCallback } from 'react';
 import { Job, Candidate, InternalCandidate, PastCandidate, UploadedCandidate } from '../types';
 import { jobPersistenceService } from '../services/JobPersistenceService';
+import { TIMING } from '../config/timing';
 
 interface UseJobOperationsProps {
     jobs: Job[];
@@ -74,7 +75,7 @@ export const useJobOperations = ({
                 .slice(0, 10);
 
             if (topCandidates.length > 0) {
-                setTimeout(() => onAutoAnalyze(topCandidates), 1000);
+                setTimeout(() => onAutoAnalyze(topCandidates), TIMING.JOB_AUTO_ANALYZE_TRIGGER_DELAY_MS);
             }
         }
     }, [allCandidates, calculateInitialMatch, setInternalCandidates, setPastCandidates, setUploadedCandidates, setJobs, setSelectedJobId, showToast]);

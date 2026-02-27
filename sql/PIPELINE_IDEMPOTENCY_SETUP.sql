@@ -38,15 +38,14 @@ CREATE POLICY "pipeline_processing_marks_authenticated_all"
 ON pipeline_processing_marks
 FOR ALL
 TO authenticated
-USING (true)
-WITH CHECK (true);
+USING (auth.role() = 'authenticated')
+WITH CHECK (auth.role() = 'authenticated');
 
--- Anon access (demo/local)
 DROP POLICY IF EXISTS "pipeline_processing_marks_anon_all" ON pipeline_processing_marks;
-CREATE POLICY "pipeline_processing_marks_anon_all"
-ON pipeline_processing_marks
-FOR ALL
-TO anon
-USING (true)
-WITH CHECK (true);
-
+-- Optional for local/demo only:
+-- CREATE POLICY "pipeline_processing_marks_anon_all"
+-- ON pipeline_processing_marks
+-- FOR ALL
+-- TO anon
+-- USING (true)
+-- WITH CHECK (true);

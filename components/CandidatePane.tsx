@@ -3,6 +3,7 @@ import type { Candidate, EvidencePack, Job, RoleContextPack } from '../types';
 import SkillsPassport from './SkillsPassport';
 import { Users, UserCheck, UploadCloud, Loader2, Diamond, TrendingUp, MessageSquare, Briefcase, ThumbsUp, ThumbsDown, Sparkles, Zap, Trophy, ArrowRight, Microscope, Building2, Clock, Globe, FileText, CheckCircle, Search, Mail, Phone, MapPin, Calendar, Download, ExternalLink, ChevronDown, ChevronUp, Play, Award, X, Database, RefreshCw, Filter, GraduationCap, Star, PlusCircle, Fingerprint, Shield, Info, AlertTriangle, UserPlus, ListChecks, CalendarDays } from 'lucide-react';
 import { useData } from '../contexts/DataContext';
+import { useCandidateJobDrawer } from '../contexts/CandidateJobDrawerContext';
 import { useSupabaseCandidates } from '../hooks/useSupabaseCandidates';
 import { decisionArtifactService } from '../services/DecisionArtifactService';
 import { pipelineEventService } from '../services/PipelineEventService';
@@ -11,6 +12,8 @@ import { evidencePackService } from '../services/EvidencePackService';
 import { jobContextPackService } from '../services/JobContextPackService';
 import RecordAssessmentModal from './modals/RecordAssessmentModal';
 import { toCandidateSnapshot, toJobSnapshot } from '../utils/snapshots';
+import type { DecisionValue } from '../services/DecisionArtifactService';
+import { TIMING } from '../config/timing';
 
 interface CandidatePaneProps {
   job: Job | null;
@@ -19,7 +22,6 @@ interface CandidatePaneProps {
   onAddToPipeline: (candidate: Candidate, jobId: string) => void;
   onBatchAnalysis?: (candidates: Candidate[]) => void;
   onViewProfile?: (candidate: Candidate) => void;
-  onOpenCandidateJobDrawer?: (candidate: Candidate, job: Job) => void;
   isLoading: boolean;
   loadingCandidateId: string | null;
   isBatchAnalyzing?: boolean;
@@ -28,7 +30,20 @@ interface CandidatePaneProps {
 /**
  * Build candidate subtitle from graph data
  */
-function buildCandidateSubtitle(candidate: any): string {
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : null;
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((item) => String(item)) : [];
+}
+
+type GraphCandidateSource = {
+  companies?: string[];
+  schools?: string[];
+};
+
+function buildCandidateSubtitle(candidate: GraphCandidateSource): string {
   const parts: string[] = [];
 
   if (candidate.companies && candidate.companies.length > 0) {
@@ -84,7 +99,7 @@ const CandidateCard: React.FC<{
   const matchScore = candidate.matchScores?.[job.id];
   const matchRationale = candidate.matchRationales?.[job.id];
   const feedback = candidate.feedback?.[job.id] ?? 'none';
-  const isInPipeline = Boolean((candidate as any).pipelineStage?.[job.id]);
+  const isInPipeline = Boolean(candidate.pipelineStage?.[job.id]);
   const [skillsPassportSkill, setSkillsPassportSkill] = useState<string | null>(null);
 
   // Extract company and school data
@@ -93,11 +108,14 @@ const CandidateCard: React.FC<{
     const schools: string[] = [];
 
     // Try to get from metadata first (for Supabase candidates)
-    if ((candidate as any).companies) {
-      companies.push(...(candidate as any).companies);
+    const metadata = asRecord(candidate.metadata);
+    const metadataCompanies = asStringArray(metadata?.companies);
+    const metadataSchools = asStringArray(metadata?.schools);
+    if (metadataCompanies.length) {
+      companies.push(...metadataCompanies);
     }
-    if ((candidate as any).schools) {
-      schools.push(...(candidate as any).schools);
+    if (metadataSchools.length) {
+      schools.push(...metadataSchools);
     }
 
     // Fallback: parse from fileName subtitle
@@ -111,8 +129,8 @@ const CandidateCard: React.FC<{
   };
 
   const { companies, schools } = getCompanySchoolData();
-  const experienceYears = (candidate as any).experienceYears || 0;
-  const location = (candidate as any).location || candidate.location || '';
+  const experienceYears = candidate.experienceYears ?? 0;
+  const location = candidate.location || '';
 
   // Get match quality badge
   const getMatchQuality = () => {
@@ -470,8 +488,9 @@ const CandidateCard: React.FC<{
 };
 
 
-const CandidatePane: React.FC<CandidatePaneProps> = ({ job, onInitiateAnalysis, onFeedback, onAddToPipeline, onBatchAnalysis, onViewProfile, onOpenCandidateJobDrawer, isLoading, loadingCandidateId, isBatchAnalyzing }) => {
+const CandidatePane: React.FC<CandidatePaneProps> = ({ job, onInitiateAnalysis, onFeedback, onAddToPipeline, onBatchAnalysis, onViewProfile, isLoading, loadingCandidateId, isBatchAnalyzing }) => {
   const { internalCandidates, pastCandidates, uploadedCandidates } = useData();
+  const drawerContext = useCandidateJobDrawer();
   const [activeSource, setActiveSource] = useState<CandidateSource>('all');
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
   const [drawerTab, setDrawerTab] = useState<'summary' | 'pipeline'>('summary');
@@ -572,7 +591,7 @@ const CandidatePane: React.FC<CandidatePaneProps> = ({ job, onInitiateAnalysis, 
           const next = { ...prev };
 
           for (const [candidateId, artifact] of latestByCandidateId.entries()) {
-            const rawSemantic = (artifact.details as any)?.semanticScore;
+            const rawSemantic = artifact.details?.semanticScore;
             const semanticScore = Number(rawSemantic);
 
             next[candidateId] = {
@@ -588,7 +607,7 @@ const CandidatePane: React.FC<CandidatePaneProps> = ({ job, onInitiateAnalysis, 
         setEvidencePackByCandidateId((prev) => {
           const next = { ...prev };
           for (const [candidateId, artifact] of latestByCandidateId.entries()) {
-            const maybePack = (artifact.details as any)?.evidencePack;
+            const maybePack = artifact.details?.evidencePack;
             if (maybePack && typeof maybePack === 'object') {
               next[candidateId] = maybePack as EvidencePack;
             }
@@ -723,7 +742,7 @@ const CandidatePane: React.FC<CandidatePaneProps> = ({ job, onInitiateAnalysis, 
         const matchScore = fit.score;
         const matchRationale = fit.rationale;
 
-        const decision = fitAnalysisService.decisionFromScore(matchScore) as any;
+        const decision = fitAnalysisService.decisionFromScore(matchScore) as DecisionValue;
         const externalId = fitAnalysisService.getExternalIdForJob(job, 'ui');
 
         const evidencePack = await evidencePackService.build({
@@ -775,7 +794,7 @@ const CandidatePane: React.FC<CandidatePaneProps> = ({ job, onInitiateAnalysis, 
       }
 
       // Light throttling to reduce rate-limit risk
-      await new Promise(resolve => setTimeout(resolve, 900));
+      await new Promise(resolve => setTimeout(resolve, TIMING.SHORTLIST_ANALYSIS_THROTTLE_DELAY_MS));
     }
 
     setIsShortlistAnalyzing(false);
@@ -933,11 +952,14 @@ const CandidatePane: React.FC<CandidatePaneProps> = ({ job, onInitiateAnalysis, 
           <div className="mt-3 p-3 bg-slate-900/50 border border-slate-700 rounded-lg">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-semibold text-slate-400 uppercase mr-1">Filters</span>
-              <select
-                value={experienceFilter || ''}
-                onChange={(e) => setExperienceFilter(e.target.value as any || null)}
-                className="px-3 py-1 bg-slate-800 border border-slate-600 rounded text-xs text-slate-300 focus:outline-none focus:ring-2 focus:ring-sky-500"
-              >
+	              <select
+	                value={experienceFilter || ''}
+	                onChange={(e) => {
+	                  const value = e.target.value;
+	                  setExperienceFilter(value === 'junior' || value === 'mid' || value === 'senior' ? value : null);
+	                }}
+	                className="px-3 py-1 bg-slate-800 border border-slate-600 rounded text-xs text-slate-300 focus:outline-none focus:ring-2 focus:ring-sky-500"
+	              >
                 <option value="">All Levels</option>
                 <option value="junior">Junior (0-3 yrs)</option>
                 <option value="mid">Mid (3-7 yrs)</option>
@@ -982,8 +1004,8 @@ const CandidatePane: React.FC<CandidatePaneProps> = ({ job, onInitiateAnalysis, 
                     job={job}
                     evidencePack={evidencePackByCandidateId[candidate.id]}
                     onSelect={(c) => {
-                      if (onOpenCandidateJobDrawer) {
-                        onOpenCandidateJobDrawer(c, job);
+                      if (drawerContext) {
+                        drawerContext.openCandidateJobDrawer(c, job);
                         return;
                       }
                       setSelectedCandidate(c);
@@ -1106,14 +1128,14 @@ const CandidatePane: React.FC<CandidatePaneProps> = ({ job, onInitiateAnalysis, 
                       <div className="bg-slate-800/60 border border-slate-700 rounded-lg p-4">
                         <div className="text-xs font-semibold text-slate-400 uppercase mb-2">Status</div>
                         <div className="text-sm text-slate-200">
-                          {String((selectedCandidate as any).pipelineStage?.[job.id] || 'Not in pipeline')}
+                          {String(selectedCandidate.pipelineStage?.[job.id] || 'Not in pipeline')}
                         </div>
                       </div>
 
                       <button
                         type="button"
                         onClick={() => onAddToPipeline(selectedCandidate, job.id)}
-                        disabled={Boolean((selectedCandidate as any).pipelineStage?.[job.id])}
+                        disabled={Boolean(selectedCandidate.pipelineStage?.[job.id])}
                         className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-semibold py-2.5 px-4 rounded-lg flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <PlusCircle className="h-4 w-4" />

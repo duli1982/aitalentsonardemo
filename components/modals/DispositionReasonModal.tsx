@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { X, ClipboardList, Save } from 'lucide-react';
 import type { PipelineStage } from '../../types';
 import { useEscapeKey } from '../../hooks/useEscapeKey';
+import { TIMING } from '../../config/timing';
 
 export type DispositionReasonCode =
   | 'skills_gap'
@@ -101,7 +102,7 @@ const DispositionReasonModal: React.FC<Props> = ({ isOpen, stage, candidateName,
     setNotes('');
     setCompDelta('');
     setCompetingOffer('unknown');
-    setTimeout(() => confirmRef.current?.focus(), 0);
+    setTimeout(() => confirmRef.current?.focus(), TIMING.DIALOG_FOCUS_DELAY_MS);
   }, [isOpen, stage]);
 
   const options = useMemo(() => optionsForStage(stage), [stage]);
@@ -239,4 +240,3 @@ const DispositionReasonModal: React.FC<Props> = ({ isOpen, stage, candidateName,
 };
 
 export default DispositionReasonModal;
-

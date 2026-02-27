@@ -4,7 +4,6 @@
  * This is a PROACTIVE agent - it works while you sleep!
  */
 
-import { semanticSearchService } from './SemanticSearchService';
 import { agenticSourcingPrototype } from './AgenticSourcingPrototype';
 import { backgroundJobService } from './BackgroundJobService';
 import { pulseService } from './PulseService';
@@ -17,13 +16,12 @@ import type { AgentMode } from './AgentSettingsService';
 import { proposedActionService } from './ProposedActionService';
 import { jobContextPackService } from './JobContextPackService';
 import { evidencePackService } from './EvidencePackService';
-import type { Candidate, IntakeScorecard } from '../types';
+import type { Candidate, IntakeScorecard, Job, PipelineStage } from '../types';
 import { toCandidateSnapshot, toJobSnapshot } from '../utils/snapshots';
 import { intakeCallPersistenceService } from './IntakeCallPersistenceService';
+import { TIMING } from '../config/timing';
 
 const AI_PROMOTE_TO_LONG_LIST_THRESHOLD = 75;
-const SOURCING_SEMANTIC_THRESHOLD = 0.65;
-const SOURCING_CANDIDATE_LIMIT = 10;
 
 export interface SourcingMatch {
     jobId: string;
@@ -35,18 +33,43 @@ export interface SourcingMatch {
     discoveredAt: Date;
 }
 
+type SourcingJob = Job;
+
+type SourcedCandidate = {
+    id: string;
+    name: string;
+    skills: string[];
+    similarity: number;
+    metadata: Record<string, unknown>;
+    email?: string;
+    type: string;
+    location?: string;
+};
+
+function asRecord(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+}
+
+function readString(metadata: Record<string, unknown>, key: string): string | undefined {
+    return typeof metadata[key] === 'string' ? (metadata[key] as string) : undefined;
+}
+
+function readNumber(metadata: Record<string, unknown>, key: string): number | undefined {
+    return typeof metadata[key] === 'number' ? (metadata[key] as number) : undefined;
+}
+
 class AutonomousSourcingAgent {
     private jobId: string | null = null;
     private matches: SourcingMatch[] = [];
     private isInitialized = false;
     private mode: AgentMode = 'recommend';
-    private jobs: any[] = [];
+    private jobs: SourcingJob[] = [];
 
     /**
      * Initialize the autonomous sourcing agent
      * This agent runs every 5 minutes to find new candidates
      */
-    initialize(jobs: any[], options?: { enabled?: boolean; mode?: AgentMode }) {
+    initialize(jobs: SourcingJob[], options?: { enabled?: boolean; mode?: AgentMode }) {
         // Keep jobs up-to-date even if initialize is called before jobs load (React often passes [] first).
         this.jobs = Array.isArray(jobs) ? jobs : [];
 
@@ -63,7 +86,7 @@ class AutonomousSourcingAgent {
         this.jobId = backgroundJobService.registerJob({
             name: 'Autonomous Candidate Sourcing',
             type: 'SOURCING',
-            interval: 5 * 60 * 1000, // 5 minutes
+            interval: TIMING.SOURCING_SCAN_INTERVAL_MS,
             enabled: options?.enabled ?? false,
             handler: async () => {
                 await this.scanForCandidates();
@@ -82,9 +105,10 @@ class AutonomousSourcingAgent {
 
         const jobs = this.jobs || [];
         // Filter for open jobs only
-        const openJobs = jobs.filter(job =>
-            job.status === 'open' || job.status === 'active'
-        );
+        const openJobs = jobs.filter((job) => {
+            const status = String(asRecord(job).status ?? '');
+            return status === 'open' || status === 'active';
+        });
 
         if (openJobs.length === 0) {
             const statusCounts = jobs.reduce<Record<string, number>>((acc, job) => {
@@ -118,9 +142,6 @@ class AutonomousSourcingAgent {
                     }
                 }
 
-                // Build search query from job requirements
-                const searchQuery = this.buildSearchQuery(job);
-
                 // Search the vector database
                 // Search using Agentic Prototype (Multi-step reasoning)
                 const searchResult = await this.retryTransient(() =>
@@ -128,20 +149,23 @@ class AutonomousSourcingAgent {
                 );
 
                 // Map Agentic results to the format expected by the rest of the method
-                const candidates = searchResult.success
+                const candidates: SourcedCandidate[] = searchResult.success
                     ? searchResult.data.map(r => ({
+                        ...(asRecord(r.fullCandidate)),
                         id: r.candidateId,
                         name: r.candidateName,
                         skills: r.candidateSkills,
                         similarity: r.score / 100, // Normalize back to 0-1 for compatibility
                         metadata: {
-                            ...(r.fullCandidate?.metadata || {}),
+                            ...asRecord(asRecord(r.fullCandidate).metadata),
                             agentReasoning: r.reasoning.join('; ')
                         },
                         // Ensure we carry over other fields like email/type/location if available from fullCandidate
-                        email: r.fullCandidate?.email,
-                        type: r.fullCandidate?.type || 'uploaded',
-                        location: r.fullCandidate?.location || r.fullCandidate?.metadata?.location
+                        email: readString(asRecord(r.fullCandidate), 'email'),
+                        type: readString(asRecord(r.fullCandidate), 'type') || 'uploaded',
+                        location:
+                            readString(asRecord(r.fullCandidate), 'location') ||
+                            readString(asRecord(asRecord(r.fullCandidate).metadata), 'location')
                     }))
                     : [];
 
@@ -165,7 +189,10 @@ class AutonomousSourcingAgent {
 
                 // Filter out candidates already in the job pipeline
                 const newCandidates = candidates.filter(candidate => {
-                    const isAlreadyInPipeline = job.candidateIds?.includes(candidate.id);
+                    const candidateIds = asRecord(job).candidateIds;
+                    const isAlreadyInPipeline = Array.isArray(candidateIds)
+                        ? candidateIds.map((id) => String(id)).includes(candidate.id)
+                        : false;
                     const alreadyDiscovered = this.matches.some(
                         m => m.candidateId === candidate.id && m.jobId === job.id
                     );
@@ -181,6 +208,10 @@ class AutonomousSourcingAgent {
                     // Store matches
                     for (const candidate of newCandidates) {
                         const semanticScore = Math.round(candidate.similarity * 100);
+                        const candidateRole = readString(candidate.metadata, 'role') || readString(candidate.metadata, 'title') || 'Candidate';
+                        const candidateExperience = readNumber(candidate.metadata, 'experience') ?? readNumber(candidate.metadata, 'experienceYears') ?? 0;
+                        const candidateLocation = readString(candidate.metadata, 'location') || readString(candidate.metadata, 'city') || '';
+                        const candidateAvailability = readString(candidate.metadata, 'availability') || 'Unknown';
 
                         const sourcedStep = 'sourcing:stage:sourced:v1';
                         const canStageSourced = await processingMarkerService.beginStep({
@@ -222,11 +253,11 @@ class AutonomousSourcingAgent {
                                     id: candidate.id,
                                     type: 'uploaded',
                                     name: candidate.name,
-                                    role: candidate.metadata?.role || candidate.metadata?.title || 'Candidate',
+                                    role: candidateRole,
                                     skills: candidate.skills || [],
-                                    experience: candidate.metadata?.experience ?? candidate.metadata?.experienceYears ?? 0,
-                                    location: candidate.metadata?.location || candidate.metadata?.city || '',
-                                    availability: candidate.metadata?.availability || 'Unknown',
+                                    experience: candidateExperience,
+                                    location: candidateLocation,
+                                    availability: candidateAvailability,
                                     email: candidate.email,
                                     source: candidate.type,
                                     matchScores: { [job.id]: semanticScore },
@@ -237,16 +268,16 @@ class AutonomousSourcingAgent {
                         } else {
                             const proposalCandidate = {
                                 id: candidate.id,
-                                type: 'uploaded',
+                                type: 'uploaded' as const,
                                 name: candidate.name,
-                                role: candidate.metadata?.role || candidate.metadata?.title || 'Candidate',
+                                role: candidateRole,
                                 skills: candidate.skills || [],
-                                experience: candidate.metadata?.experience ?? candidate.metadata?.experienceYears ?? 0,
-                                location: candidate.metadata?.location || candidate.metadata?.city || '',
-                                availability: candidate.metadata?.availability || 'Unknown',
+                                experience: candidateExperience,
+                                location: candidateLocation,
+                                availability: candidateAvailability,
                                 email: candidate.email,
                                 source: candidate.type
-                            } as any;
+                            };
 
                             proposedActionService.add({
                                 agentType: 'SOURCING',
@@ -303,8 +334,8 @@ class AutonomousSourcingAgent {
                         });
 
                         // AI gating: AI score >= 75 → Long List, else → New with score note
+                        const analysisStep = 'shortlist_analysis:v1';
                         try {
-                            const analysisStep = 'shortlist_analysis:v1';
                             const canAnalyze = await processingMarkerService.beginStep({
                                 candidateId: candidate.id,
                                 jobId: job.id,
@@ -321,11 +352,11 @@ class AutonomousSourcingAgent {
                                 id: String(candidate.id),
                                 type: 'uploaded',
                                 name: candidate.name || 'Candidate',
-                                role: String(candidate.metadata?.role || candidate.metadata?.title || 'Candidate'),
+                                role: candidateRole,
                                 skills: Array.isArray(candidate.skills) ? candidate.skills : [],
-                                experienceYears: Number(candidate.metadata?.experienceYears ?? candidate.metadata?.experience ?? 0) || 0,
-                                summary: String(candidate.metadata?.summary || candidate.metadata?.content || ''),
-                                location: String(candidate.metadata?.location || candidate.metadata?.city || ''),
+                                experienceYears: Number(readNumber(candidate.metadata, 'experienceYears') ?? readNumber(candidate.metadata, 'experience') ?? 0) || 0,
+                                summary: String(readString(candidate.metadata, 'summary') || readString(candidate.metadata, 'content') || ''),
+                                location: String(candidateLocation),
                                 email: candidate.email || ''
                             };
 
@@ -349,7 +380,7 @@ class AutonomousSourcingAgent {
                                 jobId: job.id,
                                 jobTitle: job.title,
                                 score: aiScore,
-                                decision: decision as any,
+                                decision,
                                 summary: aiRationale || undefined,
                                 details: {
                                     semanticScore,
@@ -433,19 +464,19 @@ class AutonomousSourcingAgent {
                             } else {
                                 const proposalCandidate = {
                                     id: candidate.id,
-                                    type: 'uploaded',
+                                    type: 'uploaded' as const,
                                     name: candidate.name,
-                                    role: candidate.metadata?.role || candidate.metadata?.title || 'Candidate',
+                                    role: candidateRole,
                                     skills: candidate.skills || [],
-                                    experience: candidate.metadata?.experience ?? candidate.metadata?.experienceYears ?? 0,
-                                    location: candidate.metadata?.location || candidate.metadata?.city || '',
-                                    availability: candidate.metadata?.availability || 'Unknown',
+                                    experience: candidateExperience,
+                                    location: candidateLocation,
+                                    availability: candidateAvailability,
                                     email: candidate.email,
                                     source: candidate.type,
                                     matchScores: { [job.id]: aiScore },
                                     matchRationales: { [job.id]: note },
                                     matchRationale: note
-                                } as any;
+                                };
 
                                 proposedActionService.add({
                                     agentType: 'SOURCING',
@@ -457,7 +488,7 @@ class AutonomousSourcingAgent {
                                         type: 'MOVE_CANDIDATE_TO_STAGE',
                                         candidate: proposalCandidate,
                                         jobId: job.id,
-                                        stage: targetStage as any
+                                        stage: targetStage as PipelineStage
                                     },
                                     evidence: [
                                         { label: 'Semantic', value: `${semanticScore}%` },
@@ -541,19 +572,19 @@ class AutonomousSourcingAgent {
                             } else {
                                 const proposalCandidate = {
                                     id: candidate.id,
-                                    type: 'uploaded',
+                                    type: 'uploaded' as const,
                                     name: candidate.name,
-                                    role: candidate.metadata?.role || candidate.metadata?.title || 'Candidate',
+                                    role: candidateRole,
                                     skills: candidate.skills || [],
-                                    experience: candidate.metadata?.experience ?? candidate.metadata?.experienceYears ?? 0,
-                                    location: candidate.metadata?.location || candidate.metadata?.city || '',
-                                    availability: candidate.metadata?.availability || 'Unknown',
+                                    experience: candidateExperience,
+                                    location: candidateLocation,
+                                    availability: candidateAvailability,
                                     email: candidate.email,
                                     source: candidate.type,
                                     matchScores: { [job.id]: semanticScore },
                                     matchRationales: { [job.id]: note },
                                     matchRationale: note
-                                } as any;
+                                };
 
                                 proposedActionService.add({
                                     agentType: 'SOURCING',
@@ -622,42 +653,6 @@ class AutonomousSourcingAgent {
         }
 
         return last as import('../types/result').Result<T>;
-    }
-
-    /**
-     * Build semantic search query from job requirements
-     */
-    private buildSearchQuery(job: any): string {
-        const parts: string[] = [];
-
-        const description = String(job.description || '').trim();
-        const descriptionSnippet = description.replace(/\s+/g, ' ').slice(0, 800);
-
-        // Add title/role
-        if (job.title) {
-            parts.push(job.title);
-        }
-
-        // Add seniority
-        if (job.seniority) {
-            parts.push(job.seniority);
-        }
-
-        if (descriptionSnippet) {
-            parts.push(descriptionSnippet);
-        }
-
-        // Add required skills
-        if (job.requiredSkills && job.requiredSkills.length > 0) {
-            parts.push(`with expertise in ${job.requiredSkills.slice(0, 5).join(', ')}`);
-        }
-
-        // Add experience level
-        if (job.experienceRequired) {
-            parts.push(`${job.experienceRequired}+ years experience`);
-        }
-
-        return parts.join(' ');
     }
 
     /**
@@ -734,7 +729,7 @@ class AutonomousSourcingAgent {
     /**
      * Manually trigger a scan (for testing)
      */
-    async triggerScan(jobs: any[]) {
+    async triggerScan(jobs: SourcingJob[]) {
         if (!this.jobId) {
             throw new Error('Agent not initialized');
         }

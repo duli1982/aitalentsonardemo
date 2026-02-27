@@ -16,8 +16,12 @@ export type PersistCandidateDocumentParams = {
   source?: string;
 };
 
-function isMissingRelationOrColumn(error: any) {
-  const msg = String(error?.message || '').toLowerCase();
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+}
+
+function isMissingRelationOrColumn(error: unknown) {
+  const msg = String((error as { message?: unknown } | null)?.message || '').toLowerCase();
   return msg.includes('does not exist') || msg.includes('unknown field') || msg.includes('column') || msg.includes('relation');
 }
 
@@ -42,10 +46,10 @@ class CandidatePersistenceService {
             headline: params.title ?? null,
             experience_years: typeof params.experienceYears === 'number' ? params.experienceYears : null,
             seniority: params.seniority ?? null,
-            skills: Array.isArray(params.skills) ? params.skills : [],
-            metadata: params.candidateMetadata ?? {},
-            updated_at: new Date().toISOString()
-          } as any,
+              skills: Array.isArray(params.skills) ? params.skills : [],
+              metadata: params.candidateMetadata ?? {},
+              updated_at: new Date().toISOString()
+          },
           { onConflict: 'id' }
         );
       if (error && !isMissingRelationOrColumn(error)) {
@@ -58,7 +62,7 @@ class CandidatePersistenceService {
 
     // 2) Deactivate previous active docs for this candidate (best-effort).
     try {
-      await supabase.from('candidate_documents').update({ is_active: false, updated_at: new Date().toISOString() } as any).eq('candidate_id', candidateId);
+      await supabase.from('candidate_documents').update({ is_active: false, updated_at: new Date().toISOString() }).eq('candidate_id', candidateId);
     } catch {
       // ignore
     }
@@ -72,13 +76,13 @@ class CandidatePersistenceService {
       source: params.source ?? null,
       is_active: true,
       updated_at: new Date().toISOString()
-    } as any;
+    };
 
     const documentInsertPayloadLegacy = {
       content: params.documentContent,
       metadata: params.documentMetadata,
       embedding: params.embedding
-    } as any;
+    };
 
     let documentId: string | undefined;
     const insertAttempt = await supabase.from('candidate_documents').insert(documentInsertPayloadFull).select('id').maybeSingle();
@@ -88,15 +92,15 @@ class CandidatePersistenceService {
       }
       const legacy = await supabase.from('candidate_documents').insert(documentInsertPayloadLegacy).select('id').maybeSingle();
       if (legacy.error) throw legacy.error;
-      documentId = legacy.data ? String((legacy.data as any).id) : undefined;
+      documentId = legacy.data ? String(asRecord(legacy.data).id ?? '') : undefined;
     } else {
-      documentId = insertAttempt.data ? String((insertAttempt.data as any).id) : undefined;
+      documentId = insertAttempt.data ? String(asRecord(insertAttempt.data).id ?? '') : undefined;
     }
 
     // 4) Update active document pointer (best-effort; safe if candidates table/column not present).
     if (documentId) {
       try {
-        await supabase.from('candidates').update({ active_document_id: Number(documentId), updated_at: new Date().toISOString() } as any).eq('id', candidateId);
+        await supabase.from('candidates').update({ active_document_id: Number(documentId), updated_at: new Date().toISOString() }).eq('id', candidateId);
       } catch {
         // ignore
       }
@@ -107,4 +111,3 @@ class CandidatePersistenceService {
 }
 
 export const candidatePersistenceService = new CandidatePersistenceService();
-

@@ -2,6 +2,7 @@ import type { Candidate, EvidencePack, Job, RoleContextPack } from '../types';
 import type { DecisionArtifactRecord } from './DecisionArtifactService';
 import type { RecruitingScorecardRecord } from './RecruitingScorecardService';
 import { evidencePackService } from './EvidencePackService';
+import { toCandidateSnapshot, toJobSnapshot } from '../utils/snapshots';
 
 export interface CandidateJobRecruitingState {
   jobId: string;
@@ -31,10 +32,12 @@ export function computeCandidateJobRecruitingState(params: {
   const { job, candidate, contextPack, shortlistArtifact, screeningArtifact, scorecard } = params;
 
   const fromArtifact = (shortlistArtifact?.details as any)?.evidencePack as EvidencePack | undefined;
+  const jobSnapshot = toJobSnapshot(job);
+  const candidateSnapshot = toCandidateSnapshot(candidate);
   const evidencePack =
     fromArtifact && typeof fromArtifact === 'object'
       ? fromArtifact
-      : evidencePackService.buildDeterministic({ job, candidate, contextPack });
+      : evidencePackService.buildDeterministic({ job: jobSnapshot, candidate: candidateSnapshot, contextPack });
 
   const scorecardConfidence = typeof scorecard?.confidence === 'number' ? scorecard.confidence : null;
   const confidence = clamp01(scorecardConfidence ?? evidencePack.confidence ?? 0);
@@ -53,4 +56,3 @@ export function computeCandidateJobRecruitingState(params: {
     missing
   };
 }
-

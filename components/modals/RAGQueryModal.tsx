@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Sparkles, Loader2, User, TrendingUp, Copy, CheckCircle, MessageSquare, FileText, GitCompare, Brain } from 'lucide-react';
 import { ragService, RAGResult } from '../../services/RAGService';
+import { TIMING } from '../../config/timing';
 
 interface RAGQueryModalProps {
     isOpen: boolean;
@@ -85,7 +86,7 @@ const RAGQueryModal: React.FC<RAGQueryModalProps> = ({ isOpen, onClose }) => {
         if (result) {
             navigator.clipboard.writeText(result.response);
             setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
+            setTimeout(() => setCopied(false), TIMING.CLIPBOARD_COPY_RESET_MS);
         }
     };
 

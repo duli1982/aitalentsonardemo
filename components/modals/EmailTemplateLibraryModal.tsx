@@ -4,6 +4,7 @@ import { X, Mail, Loader2, Copy, Send, Sparkles, CheckCircle } from 'lucide-reac
 import type { Candidate, Job } from '../../types';
 import { aiService } from '../../services/AIService';
 import { useToast } from '../../contexts/ToastContext';
+import { TIMING } from '../../config/timing';
 
 interface EmailTemplateLibraryModalProps {
     isOpen: boolean;
@@ -219,7 +220,7 @@ const EmailTemplateLibraryModal: React.FC<EmailTemplateLibraryModalProps> = ({ i
         const fullEmail = `Subject: ${personalizedEmail?.subject}\n\n${editedBody}`;
         navigator.clipboard.writeText(fullEmail);
         setIsCopied(true);
-        setTimeout(() => setIsCopied(false), 2000);
+        setTimeout(() => setIsCopied(false), TIMING.CLIPBOARD_COPY_RESET_MS);
     };
 
     const handleSend = () => {

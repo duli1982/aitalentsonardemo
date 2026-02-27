@@ -6,6 +6,7 @@ import type { ScreeningResult } from '../../services/AutonomousScreeningAgent';
 import type { DecisionArtifactRecord } from '../../services/DecisionArtifactService';
 import type { PipelineEventRecord } from '../../services/PipelineEventService';
 import { aiService } from '../../services/AIService';
+import { TIMING } from '../../config/timing';
 
 type EmailPurpose = 'outreach' | 'follow_up' | 'interview_invitation' | 'rejection' | 'offer' | 'thank_you';
 
@@ -80,7 +81,7 @@ function buildFacts(params: {
 
 function defaultPurpose(params: { latestScreening?: ScreeningResult; latestShortlist?: DecisionArtifactRecord }): EmailPurpose {
     const screeningDecision = params.latestScreening?.recommendation;
-    if (screeningDecision === 'FAIL' || screeningDecision === 'REJECTED') return 'rejection';
+    if (screeningDecision === 'FAIL') return 'rejection';
     if (screeningDecision === 'PASS' || screeningDecision === 'STRONG_PASS' || screeningDecision === 'BORDERLINE') return 'interview_invitation';
     if (params.latestShortlist?.decision === 'FAIL' || params.latestShortlist?.decision === 'REJECTED') return 'rejection';
     return 'outreach';
@@ -251,7 +252,7 @@ const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
         try {
             await navigator.clipboard.writeText(full);
             setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
+            setTimeout(() => setCopied(false), TIMING.CLIPBOARD_COPY_RESET_MS);
         } catch {
             // ignore
         }
@@ -448,4 +449,3 @@ const EmailComposerModal: React.FC<EmailComposerModalProps> = ({
 };
 
 export default EmailComposerModal;
-

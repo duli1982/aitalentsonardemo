@@ -267,7 +267,7 @@ const MatchingTab: React.FC<{ candidate: Candidate, jobs: Job[], onInitiateAnaly
                     </div>
                      <div><h4 className="font-semibold text-sky-400/90 mb-1">Rationale:</h4><p className="text-gray-300 italic text-sm">{analysis.matchRationale}</p></div>
                     <div className="flex justify-center items-center pt-4 border-t border-slate-600/50">
-                        <SkillGapChart analysis={analysis.skillGapAnalysis} jobSkills={selectedJob.requiredSkills} />
+                        <SkillGapChart analysis={analysis.skillGapAnalysis ?? []} jobSkills={selectedJob.requiredSkills} />
                     </div>
                  </div>
             )}

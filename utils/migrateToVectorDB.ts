@@ -55,8 +55,11 @@ export async function migrateAllCandidates(
             // Generate embedding
             const embeddingResult = await aiService.embedText(textContent);
 
-            if (!embeddingResult.success || !embeddingResult.data) {
+            if (!embeddingResult.success) {
                 throw new Error(`Failed to generate embedding: ${embeddingResult.error.message}`);
+            }
+            if (!embeddingResult.data) {
+                throw new Error('Failed to generate embedding: empty embedding response');
             }
 
             // Prepare metadata
@@ -87,9 +90,9 @@ export async function migrateAllCandidates(
                 candidateId: candidate.id,
                 fullName: candidate.name,
                 email: candidate.email,
-                title: (candidate as any).currentRole || (candidate as any).previousRoleAppliedFor || (candidate as any).role,
-                location: (candidate as any).location,
-                experienceYears: (candidate as any).experienceYears,
+                title: candidate.currentRole || candidate.previousRoleAppliedFor || candidate.role,
+                location: candidate.location,
+                experienceYears: candidate.experienceYears,
                 skills: candidate.skills,
                 candidateMetadata: metadata,
                 documentContent: textContent,
@@ -199,9 +202,14 @@ export async function checkMigrationStatus(): Promise<{
     }
 
     const migratedIds = new Set(
-        data
-            ?.map((doc: any) => doc.metadata?.id)
-            .filter(Boolean) || []
+        (data ?? [])
+            .map((doc: { metadata?: unknown }) => {
+                const metadata = doc.metadata;
+                if (!metadata || typeof metadata !== 'object') return undefined;
+                const id = (metadata as { id?: unknown }).id;
+                return typeof id === 'string' ? id : undefined;
+            })
+            .filter((id): id is string => Boolean(id))
     );
 
     const migratedCount = mockIds.filter(id => migratedIds.has(id)).length;

@@ -67,7 +67,7 @@ class EvidencePackService {
     const missing = (scorecard.missingRequiredSkills || []).slice(0, 8);
     const risks = (scorecard.risks || []).slice(0, 3);
 
-    const snippetText = safeText((candidate as any).summary ?? (candidate as any).notes ?? (candidate as any).metadata?.content, 220);
+    const snippetText = safeText(candidate.summary, 220);
     const snippet = snippetText
       ? { text: snippetText, source: 'profile' as const }
       : undefined;
@@ -148,15 +148,18 @@ class EvidencePackService {
     // Heuristic: Extract the first "Company" looking string from the summary or role.
     // Real implementation would parse structure or ask LLM to extract "Latest Company".
     let verificationContext = "No verification data available.";
-    const potentialCompany = candidate.role?.split(' at ')?.[1] || (candidate as any).metadata?.company;
+    const potentialCompany = candidate.role?.split(' at ')?.[1];
 
     if (potentialCompany) {
       try {
         const verifyRes = await agenticTools.factChecker.execute({ company: potentialCompany, role: candidate.role });
         if (verifyRes.success && verifyRes.data.results.length > 0) {
           const peers = verifyRes.data.results;
-          verificationContext = `Verified: We have ${verifyRes.data.metadata.peerCount} other candidates from ${potentialCompany} in the database.\n` +
-            `Peer Examples: ${peers.map((p: any) => `${p.title}`).join(', ')}.\n` +
+          const peerCount = typeof verifyRes.data.metadata?.peerCount === 'number'
+            ? verifyRes.data.metadata.peerCount
+            : peers.length;
+          verificationContext = `Verified: We have ${peerCount} other candidates from ${potentialCompany} in the database.\n` +
+            `Peer Examples: ${peers.map((p) => p.title).join(', ')}.\n` +
             `Use this to confirm if the candidate's skills align with other ${potentialCompany} hires.`;
         } else {
           verificationContext = `Verification Attempt: Found no other candidates from ${potentialCompany} in our database to validte against.`;

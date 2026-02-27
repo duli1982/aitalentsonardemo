@@ -12,6 +12,7 @@ import { processingMarkerService } from './ProcessingMarkerService';
 import { schedulingPersistenceService } from './SchedulingPersistenceService';
 import type { AgentMode } from './AgentSettingsService';
 import { proposedActionService } from './ProposedActionService';
+import { TIMING } from '../config/timing';
 
 export interface SchedulingRequest {
     candidateId: string;
@@ -343,8 +344,8 @@ class AutonomousSchedulingAgent {
                     interview,
                     status: 'confirmed',
                     requestedAt: request.requestedAt,
-                    proposedSlots: proposed,
-                    metadata: { requestedBy: request.requestedBy, reason: request.reason }
+                    proposedSlots,
+                    metadata: { source: 'autonomous_scheduling_agent' }
                 });
 
                 void pipelineEventService.logEvent({
@@ -360,10 +361,9 @@ class AutonomousSchedulingAgent {
                     summary: `Interview rescheduled for ${interview.candidateName} at ${selectedSlot.toISOString()}.`,
                     metadata: {
                         interviewId: interview.id,
-                        previousTime: previousTime.toISOString(),
+                        previousTime: selectedSlot.toISOString(),
                         newTime: selectedSlot.toISOString(),
-                        requestedBy: request.requestedBy,
-                        reason: request.reason
+                        requestedBy: 'candidate'
                     }
                 });
 
@@ -642,7 +642,7 @@ class AutonomousSchedulingAgent {
         // - Track email opens/clicks
 
         // Simulate network delay
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, TIMING.SCHEDULING_EMAIL_NETWORK_DELAY_MS));
     }
 
     /**
@@ -672,7 +672,7 @@ class AutonomousSchedulingAgent {
      */
     private async simulateCandidateResponse(slots: Date[]): Promise<Date> {
         // Simulate 2-day response time
-        await new Promise(resolve => setTimeout(resolve, 300));
+        await new Promise(resolve => setTimeout(resolve, TIMING.SCHEDULING_CANDIDATE_RESPONSE_DELAY_MS));
 
         // 80% accept first slot, 20% second slot
         return Math.random() < 0.8 ? slots[0] : slots[1];
@@ -690,7 +690,7 @@ class AutonomousSchedulingAgent {
         // - CC hiring manager
         // - Add to company calendar
 
-        await new Promise(resolve => setTimeout(resolve, 300));
+        await new Promise(resolve => setTimeout(resolve, TIMING.SCHEDULING_CONFIRMATION_DELAY_MS));
     }
 
     private generateMeetingLink(provider: MeetingProvider): string {
@@ -800,3 +800,4 @@ class AutonomousSchedulingAgent {
 }
 
 export const autonomousSchedulingAgent = new AutonomousSchedulingAgent();
+

@@ -19,7 +19,11 @@ const TrainingRecommenderModal: React.FC<TrainingRecommenderModalProps> = ({ isO
     const handleGenerate = async () => {
         setIsGenerating(true);
         try {
-            const result = await geminiService.generateTrainingRecommendations(candidate, job);
+            const response = await geminiService.generateTrainingRecommendationsResult(candidate, job);
+            if (!response.success && 'error' in response) {
+                throw new Error(response.error.message);
+            }
+            const result = response.data;
             setRecommendations(result);
         } catch (error) {
             console.error('Error generating recommendations:', error);

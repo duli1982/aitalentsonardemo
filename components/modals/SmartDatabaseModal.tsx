@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { UploadedCandidate, Job } from '../../types';
 import { X, Database, Users, TrendingUp, Search, Loader2, CheckCircle, AlertTriangle, Trophy, ThumbsUp, Meh, ThumbsDown } from 'lucide-react';
 import * as demoService from '../../services/demoDatabaseService';
+import { TIMING } from '../../config/timing';
 
 interface SmartDatabaseModalProps {
   onClose: () => void;
@@ -70,7 +71,7 @@ const SmartDatabaseModal: React.FC<SmartDatabaseModalProps> = ({ onClose, onLoad
 
     setTimeout(() => {
       onClose();
-    }, 1500);
+    }, TIMING.SMART_DATABASE_IMPORT_CLOSE_DELAY_MS);
   };
 
   const toggleTier = (tier: string) => {

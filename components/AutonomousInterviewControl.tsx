@@ -6,17 +6,69 @@ import { supabase } from '../services/supabaseClient';
 import { autonomousSchedulingAgent, type ScheduledInterview } from '../services/AutonomousSchedulingAgent';
 import { autonomousInterviewAgent, type InterviewSession } from '../services/AutonomousInterviewAgent';
 import { agentSettingsService } from '../services/AgentSettingsService';
+import { TIMING } from '../config/timing';
 
 interface AutonomousInterviewControlProps {
     jobs: Job[];
 }
 
-const formatTime = (date: Date | null) => {
+type InterviewAgentStatus = ReturnType<typeof autonomousInterviewAgent.getStatus>;
+type SchedulingAgentStatus = ReturnType<typeof autonomousSchedulingAgent.getStatus>;
+
+type ControlStatus = {
+    interview: InterviewAgentStatus;
+    scheduling: SchedulingAgentStatus;
+} | null;
+
+type SpeechRecognitionResultItem = { transcript?: string };
+type SpeechRecognitionResult = [SpeechRecognitionResultItem?] & { 0?: SpeechRecognitionResultItem };
+type SpeechRecognitionEventLike = {
+    results?: ArrayLike<SpeechRecognitionResult>;
+};
+type SpeechRecognitionLike = {
+    continuous: boolean;
+    interimResults: boolean;
+    lang: string;
+    onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+    onend: (() => void) | null;
+    start: () => void;
+    stop: () => void;
+};
+
+type CandidateDocumentsViewRow = {
+    candidate_id?: string;
+    id?: string;
+    name?: string;
+    email?: string;
+    title?: string;
+    location?: string;
+    experience_years?: number;
+    skills?: unknown;
+    content?: string;
+    document_metadata?: unknown;
+    metadata?: unknown;
+};
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+    return value && typeof value === 'object' ? (value as Record<string, unknown>) : null;
+}
+
+function getSpeechRecognitionCtor():
+    | (new () => SpeechRecognitionLike)
+    | null {
+    const withRecognition = window as Window & {
+        SpeechRecognition?: new () => SpeechRecognitionLike;
+        webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+    };
+    return withRecognition.SpeechRecognition ?? withRecognition.webkitSpeechRecognition ?? null;
+}
+
+const formatTime = (date: Date | null | undefined) => {
     if (!date) return 'Never';
     return new Date(date).toLocaleString();
 };
 
-const formatNextRun = (date: Date | null) => {
+const formatNextRun = (date: Date | null | undefined) => {
     if (!date) return 'Disabled';
     const now = Date.now();
     const next = new Date(date).getTime();
@@ -48,26 +100,31 @@ const resolveSupabaseCandidateById = async (id: string): Promise<Candidate | nul
                 .maybeSingle()
             : null;
 
-        const { data, error } = viewAttempt.error ? (legacyAttempt as any) : (viewAttempt as any);
+        const data = (viewAttempt.error ? legacyAttempt?.data : viewAttempt.data) as CandidateDocumentsViewRow | null | undefined;
+        const error = viewAttempt.error ? legacyAttempt?.error : viewAttempt.error;
 
         if (error || !data) return null;
-        const metadata = ((data as any).document_metadata || (data as any).metadata) || {};
-        const content = typeof (data as any).content === 'string' ? (data as any).content : '';
+        const metadata = asRecord(data.document_metadata) ?? asRecord(data.metadata) ?? {};
+        const content = typeof data.content === 'string' ? data.content : '';
         const nameFromContent = content.includes(' - ') ? content.split(' - ')[0].trim() : '';
 
         return {
-            id: String((data as any).candidate_id ?? metadata.id ?? (data as any).id),
-            name: (data as any).name || metadata.name || metadata.full_name || nameFromContent || 'Unknown',
-            email: (data as any).email || metadata.email || '',
-            role: (data as any).title || metadata.role || metadata.title || 'Candidate',
+            id: String(data.candidate_id ?? metadata.id ?? data.id),
+            name: String(data.name ?? metadata.name ?? metadata.full_name ?? nameFromContent ?? 'Unknown'),
+            email: String(data.email ?? metadata.email ?? ''),
+            role: String(data.title ?? metadata.role ?? metadata.title ?? 'Candidate'),
             type: 'uploaded' as const,
-            skills: Array.isArray((data as any).skills) ? (data as any).skills : Array.isArray(metadata.skills) ? metadata.skills : [],
-            location: (data as any).location || metadata.location || '',
-            experience: (data as any).experience_years || metadata.experience || 0,
-            availability: metadata.availability || '',
+            skills: Array.isArray(data.skills)
+                ? data.skills.map((skill) => String(skill))
+                : Array.isArray(metadata.skills)
+                    ? metadata.skills.map((skill) => String(skill))
+                    : [],
+            location: String(data.location ?? metadata.location ?? ''),
+            experience: Number(data.experience_years ?? metadata.experience ?? 0),
+            availability: String(metadata.availability ?? ''),
             matchScores: {},
             feedback: {}
-        } as Candidate;
+        };
     } catch {
         return null;
     }
@@ -76,14 +133,14 @@ const resolveSupabaseCandidateById = async (id: string): Promise<Candidate | nul
 const AutonomousInterviewControl: React.FC<AutonomousInterviewControlProps> = ({ jobs }) => {
     const { internalCandidates, pastCandidates, uploadedCandidates } = useData();
 
-    const [status, setStatus] = useState<any>(null);
+    const [status, setStatus] = useState<ControlStatus>(null);
     const [isRefreshing, setIsRefreshing] = useState(false);
 
     const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
     const [speaker, setSpeaker] = useState<'interviewer' | 'candidate'>('interviewer');
     const [lineText, setLineText] = useState('');
     const [isListening, setIsListening] = useState(false);
-    const recognitionRef = useRef<any>(null);
+    const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
 
     const allCandidates = useMemo(() => [...internalCandidates, ...pastCandidates, ...uploadedCandidates], [internalCandidates, pastCandidates, uploadedCandidates]);
     const sessions = useMemo(() => autonomousInterviewAgent.getSessions(), [status]);
@@ -106,7 +163,7 @@ const AutonomousInterviewControl: React.FC<AutonomousInterviewControlProps> = ({
             scheduling: autonomousSchedulingAgent.getStatus()
         });
         refresh();
-        const interval = setInterval(refresh, 15000);
+        const interval = setInterval(refresh, TIMING.INTERVIEW_CONTROL_REFRESH_INTERVAL_MS);
         return () => clearInterval(interval);
     }, []);
 
@@ -117,14 +174,14 @@ const AutonomousInterviewControl: React.FC<AutonomousInterviewControlProps> = ({
         setTimeout(() => setStatus({
             interview: autonomousInterviewAgent.getStatus(),
             scheduling: autonomousSchedulingAgent.getStatus()
-        }), 100);
+        }), TIMING.UI_DELAY_MS);
     };
 
     const startFromScheduled = async (interview: ScheduledInterview) => {
         const job = jobs.find((j) => j.id === interview.jobId);
         if (!job) return;
 
-        let candidate = allCandidates.find((c) => c.id === String(interview.candidateId));
+        let candidate: Candidate | undefined = allCandidates.find((c) => c.id === String(interview.candidateId));
         if (!candidate) {
             candidate = await resolveSupabaseCandidateById(String(interview.candidateId)) || undefined;
         }
@@ -143,9 +200,10 @@ const AutonomousInterviewControl: React.FC<AutonomousInterviewControlProps> = ({
                 availability: '',
                 matchScores: {},
                 feedback: {}
-            } as Candidate;
+            };
         }
 
+        if (!candidate) return;
         const session = autonomousInterviewAgent.startSession({ interview, candidate, job });
         setActiveSessionId(session.id);
         setLineText('');
@@ -163,12 +221,12 @@ const AutonomousInterviewControl: React.FC<AutonomousInterviewControlProps> = ({
         setTimeout(() => setStatus({
             interview: autonomousInterviewAgent.getStatus(),
             scheduling: autonomousSchedulingAgent.getStatus()
-        }), 50);
+        }), TIMING.FAST_UI_DELAY_MS);
     };
 
     const startSpeech = () => {
         if (!activeSessionId) return;
-        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        const SpeechRecognition = getSpeechRecognitionCtor();
         if (!SpeechRecognition) return;
 
         const recognition = new SpeechRecognition();
@@ -176,7 +234,7 @@ const AutonomousInterviewControl: React.FC<AutonomousInterviewControlProps> = ({
         recognition.interimResults = false;
         recognition.lang = 'en-US';
 
-        recognition.onresult = (event: any) => {
+        recognition.onresult = (event: SpeechRecognitionEventLike) => {
             const last = event.results?.[event.results.length - 1];
             const transcript = last?.[0]?.transcript;
             if (!transcript) return;
@@ -188,7 +246,7 @@ const AutonomousInterviewControl: React.FC<AutonomousInterviewControlProps> = ({
             setTimeout(() => setStatus({
                 interview: autonomousInterviewAgent.getStatus(),
                 scheduling: autonomousSchedulingAgent.getStatus()
-            }), 50);
+            }), TIMING.FAST_UI_DELAY_MS);
         };
 
         recognition.onend = () => {
@@ -220,7 +278,7 @@ const AutonomousInterviewControl: React.FC<AutonomousInterviewControlProps> = ({
             setTimeout(() => setStatus({
                 interview: autonomousInterviewAgent.getStatus(),
                 scheduling: autonomousSchedulingAgent.getStatus()
-            }), 100);
+            }), TIMING.UI_DELAY_MS);
         } finally {
             setIsRefreshing(false);
         }
@@ -234,7 +292,7 @@ const AutonomousInterviewControl: React.FC<AutonomousInterviewControlProps> = ({
             setTimeout(() => setStatus({
                 interview: autonomousInterviewAgent.getStatus(),
                 scheduling: autonomousSchedulingAgent.getStatus()
-            }), 150);
+            }), TIMING.INTERVIEW_END_SESSION_REFRESH_DELAY_MS);
         } finally {
             setIsRefreshing(false);
         }
@@ -390,7 +448,7 @@ const AutonomousInterviewControl: React.FC<AutonomousInterviewControlProps> = ({
                                 <div className="flex gap-2">
                                     <select
                                         value={speaker}
-                                        onChange={(e) => setSpeaker(e.target.value as any)}
+                                        onChange={(e) => setSpeaker(e.target.value === 'candidate' ? 'candidate' : 'interviewer')}
                                         className="bg-slate-900 border border-slate-700 text-white rounded-lg px-3 py-2 text-sm"
                                     >
                                         <option value="interviewer">Interviewer</option>
@@ -398,7 +456,7 @@ const AutonomousInterviewControl: React.FC<AutonomousInterviewControlProps> = ({
                                     </select>
                                     <button
                                         onClick={isListening ? stopSpeech : startSpeech}
-                                        disabled={!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)}
+                                        disabled={!getSpeechRecognitionCtor()}
                                         className="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-sm inline-flex items-center gap-2 disabled:opacity-60"
                                     >
                                         {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}

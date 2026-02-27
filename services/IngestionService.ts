@@ -1,4 +1,5 @@
 import { SkillSignal } from '../types/inference';
+import { TIMING } from '../config/timing';
 
 export class IngestionService {
 
@@ -7,7 +8,7 @@ export class IngestionService {
         console.log(`Ingesting text from ${source}:`, text.substring(0, 50) + '...');
 
         // Mock delay for AI processing
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        await new Promise(resolve => setTimeout(resolve, TIMING.INGESTION_SIMULATED_AI_DELAY_MS));
 
         // Mock Result: Assume the text always contains some "Python" evidence for the demo
         const isPythonReference = text.toLowerCase().includes('python') || text.toLowerCase().includes('pandas');

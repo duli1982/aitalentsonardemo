@@ -55,9 +55,18 @@ export interface Candidate {
   performanceRating?: number;
   careerAspirations?: string;
   developmentGoals?: string;
+  learningAgility?: number;
+  previousRoleAppliedFor?: string;
+  lastContactDate?: string;
+  profileStatus?: 'complete' | 'partial' | 'placeholder';
+  experienceSummary?: string;
+  inferredSkills?: string[];
+  linkedInProfileUrl?: string;
+  githubProfileUrl?: string;
+  title?: string;
 
   // Generic metadata for Supabase/graph candidates.
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 
   isHiddenGem?: boolean;
   education?: string[];
@@ -113,6 +122,7 @@ export interface Job {
   type?: 'Full-time' | 'Contract' | 'Internship';
   salaryRange?: string;
   requiredSkills: string[];
+  niceToHaveSkills?: string[];
   description: string;
   posted?: string;
   postedDate?: string;
@@ -126,6 +136,7 @@ export interface Job {
     roleContextNotes?: string;
     [key: string]: unknown;
   };
+  company?: string;
   intakeScorecardId?: string;
 }
 
@@ -204,7 +215,13 @@ export interface FitAnalysis {
   strengths: string[];
   gaps: string[];
   multiDimensionalAnalysis?: MultiDimensionalAnalysis;
-  skillGapAnalysis?: Array<{ skill: string; gapLevel: number; notes?: string }>;
+  skillGapAnalysis?: Array<{
+    skill: string;
+    candidateProficiency: number;
+    rationale: string;
+    gapLevel?: number;
+    notes?: string;
+  }>;
   futurePotentialProjection?: {
     suggestedFutureRole: string;
     estimatedTimeframe: string;
@@ -234,10 +251,13 @@ export interface InterviewGuide {
   jobTitle: string;
   sections: {
     category: string;
+    title?: string;
     questions: {
       id: string;
       text: string;
+      question?: string;
       context: string; // Why ask this? based on resume/job delta
+      rationale?: string;
       expectedSignal: string; // What a good answer looks like
     }[];
   }[];

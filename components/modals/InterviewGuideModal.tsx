@@ -67,7 +67,7 @@ const InterviewGuideModal: React.FC<InterviewGuideModalProps> = ({ isOpen, onClo
                                 <span className="bg-sky-500/10 text-sky-400 w-8 h-8 rounded-full flex items-center justify-center text-sm border border-sky-500/20">
                                     {index + 1}
                                 </span>
-                                {section.title}
+                                {section.title ?? section.category}
                             </h3>
 
                             <div className="space-y-6">
@@ -76,7 +76,7 @@ const InterviewGuideModal: React.FC<InterviewGuideModalProps> = ({ isOpen, onClo
                                         <div className="flex gap-4">
                                             <div className="flex-grow">
                                                 <p className="text-lg text-gray-200 font-medium mb-3 group-hover:text-white transition-colors">
-                                                    "{q.question}"
+                                                    "{q.question ?? q.text}"
                                                 </p>
 
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
@@ -85,7 +85,7 @@ const InterviewGuideModal: React.FC<InterviewGuideModalProps> = ({ isOpen, onClo
                                                             <HelpCircle size={12} /> Why ask this?
                                                         </p>
                                                         <p className="text-sm text-gray-400 italic leading-relaxed">
-                                                            {q.rationale}
+                                                            {q.rationale ?? q.context}
                                                         </p>
                                                     </div>
 

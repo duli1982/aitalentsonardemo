@@ -1,5 +1,5 @@
 import React from 'react';
-import type { Job, Candidate, AnalysisResult, JobAnalysis, FitAnalysis, HiddenGemAnalysis } from '../../types';
+import type { Job, Candidate, JobAnalysis, FitAnalysis, HiddenGemAnalysis } from '../../types';
 import { X, Loader2, Sparkles, TrendingUp, Target, MessageSquare, Diamond } from 'lucide-react';
 import JobAnalysisContent from '../analysis/JobAnalysisContent';
 import FitAnalysisContent from '../analysis/FitAnalysisContent';
@@ -12,7 +12,7 @@ interface AnalysisModalProps {
     job: Job;
     candidate?: Candidate;
     isLoading: boolean;
-    analysisResult: AnalysisResult | null;
+    analysisResult: unknown | null;
     onClose: () => void;
     onInitiateAnalysis?: (type: string, target: Candidate) => void;
 }
@@ -38,15 +38,15 @@ const AnalysisModal: React.FC<AnalysisModalProps> = ({ type, job, candidate, isL
 
         switch (type) {
             case 'JOB_SUMMARY':
-                return <JobAnalysisContent analysis={analysisResult as JobAnalysis} />;
+                return <JobAnalysisContent analysis={analysisResult as unknown as JobAnalysis} />;
             case 'FIT_ANALYSIS':
                 // Safety check: ensure candidate exists for FIT_ANALYSIS
                 if (!candidate) return <p className="text-red-400">Candidate data missing.</p>;
-                return <FitAnalysisContent analysis={analysisResult as FitAnalysis} job={job} candidate={candidate} />;
+                return <FitAnalysisContent analysis={analysisResult as unknown as FitAnalysis} job={job} candidate={candidate} />;
             case 'HIDDEN_GEM_ANALYSIS':
-                return <HiddenGemAnalysisContent analysis={analysisResult as HiddenGemAnalysis} />;
+                return <HiddenGemAnalysisContent analysis={analysisResult as unknown as HiddenGemAnalysis} />;
             case 'OUTREACH':
-                return <OutreachContent message={analysisResult as string} />;
+                return <OutreachContent message={analysisResult as unknown as string} />;
             default:
                 return <p>Invalid analysis type.</p>;
         }

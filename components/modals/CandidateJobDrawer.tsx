@@ -9,12 +9,32 @@ import { determineNextAction } from '../../services/NextActionService';
 import { autonomousScreeningAgent } from '../../services/AutonomousScreeningAgent';
 import { useEscapeKey } from '../../hooks/useEscapeKey';
 import GraphExplorer from '../GraphExplorer';
-import { useSupabaseCandidates } from '../../hooks/useSupabaseCandidates';
+import { useSupabaseCandidates, type SupabaseCandidateResult } from '../../hooks/useSupabaseCandidates';
 import DispositionReasonModal, { type DispositionPayload } from './DispositionReasonModal';
 import PreHmTruthCheckModal from './PreHmTruthCheckModal';
 import { toCandidateSnapshot, toJobSnapshot } from '../../utils/snapshots';
 
 type DrawerTab = 'summary' | 'evidence' | 'artifacts' | 'timeline';
+type CandidateMetadata = Record<string, unknown>;
+type PassportData = NonNullable<Candidate['passport']>;
+type VerifiedSkill = PassportData['verifiedSkills'][number];
+type AssessmentHistoryItem = {
+  id?: string;
+  title?: string;
+  dateCompleted?: string;
+  score?: number;
+  skillsValidated?: string[];
+};
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : null;
+}
+
+function isPassportData(value: unknown): value is PassportData {
+  const rec = asRecord(value);
+  if (!rec) return false;
+  return Array.isArray(rec.verifiedSkills) && Array.isArray(rec.badges);
+}
 
 function formatDateTime(value: string | Date | undefined): string {
   if (!value) return '';
@@ -119,15 +139,15 @@ const CandidateJobDrawer: React.FC<CandidateJobDrawerProps> = ({
     const base: Candidate[] = [];
     if (candidate) base.push(candidate);
 
-    const fromMatches = (graphMatches || []).map((c: any) => ({
+    const fromMatches = (graphMatches || []).map((c: SupabaseCandidateResult) => ({
       id: String(c.id),
       name: c.name || 'Unknown',
       email: c.email || '',
       type: 'uploaded' as const,
       skills: Array.isArray(c.skills) ? c.skills : [],
-      role: (c as any).role || 'Candidate',
-      experience: Number((c as any).experienceYears ?? 0) || 0,
-      location: (c as any).location || '',
+      role: 'Candidate',
+      experience: Number(c.experienceYears ?? 0) || 0,
+      location: c.location || '',
       availability: ''
     })) as Candidate[];
 
@@ -152,13 +172,13 @@ const CandidateJobDrawer: React.FC<CandidateJobDrawerProps> = ({
   }, [artifacts]);
 
   const evidencePack = useMemo<EvidencePack | null>(() => {
-    const pack = (latestShortlist?.details as any)?.evidencePack;
+    const pack = latestShortlist?.details?.evidencePack;
     return pack && typeof pack === 'object' ? (pack as EvidencePack) : null;
   }, [latestShortlist]);
 
   const currentStage = useMemo(() => {
     if (!candidate || !job) return null;
-    const fromCandidate = normalizeStage((candidate as any).pipelineStage?.[job.id] || (candidate as any).stage);
+    const fromCandidate = normalizeStage(candidate.pipelineStage?.[job.id] || candidate.stage);
     if (fromCandidate) return fromCandidate;
     const latestEvent = events.find((e) => e.jobId === job.id);
     return normalizeStage(latestEvent?.toStage) || null;
@@ -169,10 +189,12 @@ const CandidateJobDrawer: React.FC<CandidateJobDrawerProps> = ({
   const matchedSkills = useMemo(() => intersection(candidateSkills, requiredSkills).slice(0, 12), [candidateSkills, requiredSkills]);
   const missingSkills = useMemo(() => difference(requiredSkills, candidateSkills).slice(0, 12), [candidateSkills, requiredSkills]);
 
-  const verifiedPassport = useMemo(() => {
-    const fromCandidate = (candidate as any)?.passport;
-    const fromMeta = (candidate as any)?.metadata?.passport;
-    return fromCandidate ?? fromMeta ?? null;
+  const verifiedPassport = useMemo<PassportData | null>(() => {
+    const fromCandidate = candidate?.passport;
+    const fromMeta = asRecord(candidate?.metadata)?.passport;
+    if (isPassportData(fromCandidate)) return fromCandidate;
+    if (isPassportData(fromMeta)) return fromMeta;
+    return null;
   }, [candidate]);
 
   const verifiedSkills = useMemo(() => {
@@ -186,8 +208,8 @@ const CandidateJobDrawer: React.FC<CandidateJobDrawerProps> = ({
   }, [verifiedPassport]);
 
   const assessmentHistory = useMemo(() => {
-    const list = (candidate as any)?.metadata?.assessmentHistory;
-    return Array.isArray(list) ? list : [];
+    const list = asRecord(candidate?.metadata)?.assessmentHistory;
+    return Array.isArray(list) ? (list as AssessmentHistoryItem[]) : [];
   }, [candidate]);
 
   const nextAction = useMemo(() => {
@@ -199,12 +221,12 @@ const CandidateJobDrawer: React.FC<CandidateJobDrawerProps> = ({
     if (screening.length) screeningsByJob.set(job.id, screening);
     if (shortlist.length) shortlistByJob.set(job.id, shortlist);
 
-	    return determineNextAction({
-	      candidateId: candidate.id,
-	      pipelineStageByJobId: (candidate as any).pipelineStage || {},
-	      jobMatches: [{ job, score: typeof matchScore === 'number' ? matchScore : 0 }],
-	      pipelineEvents: events,
-	      screeningsByJob,
+		    return determineNextAction({
+		      candidateId: candidate.id,
+		      pipelineStageByJobId: candidate.pipelineStage || {},
+		      jobMatches: [{ job, score: typeof matchScore === 'number' ? matchScore : 0 }],
+		      pipelineEvents: events,
+		      screeningsByJob,
 	      shortlistByJob,
 	      scorecards: scorecard ? { [job.id]: scorecard } : {}
 	    });
@@ -241,7 +263,7 @@ const CandidateJobDrawer: React.FC<CandidateJobDrawerProps> = ({
 
   if (!isOpen || !candidate || !job) return null;
 
-  const isInPipeline = Boolean((candidate as any).pipelineStage?.[job.id] || (candidate as any).stage);
+  const isInPipeline = Boolean(candidate.pipelineStage?.[job.id] || candidate.stage);
 
   const openDispositionCapture = (stage: PipelineStage) => {
     setPendingDispositionStage(stage);
@@ -493,9 +515,9 @@ const CandidateJobDrawer: React.FC<CandidateJobDrawerProps> = ({
                     <div className="space-y-2">
                       {verifiedSkills
                         .slice()
-                        .sort((a: any, b: any) => Number(b?.proficiencyLevel ?? 0) - Number(a?.proficiencyLevel ?? 0))
+                        .sort((a: VerifiedSkill, b: VerifiedSkill) => Number(b?.proficiencyLevel ?? 0) - Number(a?.proficiencyLevel ?? 0))
                         .slice(0, 10)
-                        .map((s: any) => (
+                        .map((s: VerifiedSkill) => (
                           <div key={`${s.skillName}_${s.verifiedAt || ''}`} className="bg-slate-900/40 border border-slate-700 rounded-lg p-3">
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
@@ -530,7 +552,7 @@ const CandidateJobDrawer: React.FC<CandidateJobDrawerProps> = ({
                       <div className="pt-2 border-t border-slate-700">
                         <div className="text-xs font-semibold text-slate-200 mb-2">Recent assessments</div>
                         <div className="space-y-2">
-                          {assessmentHistory.slice(0, 3).map((a: any) => (
+                          {assessmentHistory.slice(0, 3).map((a: AssessmentHistoryItem) => (
                             <div key={a.id ?? `${a.title}_${a.dateCompleted || ''}`} className="text-[11px] text-slate-300 bg-slate-900/40 border border-slate-700 rounded-lg p-2">
                               <div className="flex items-center justify-between gap-3">
                                 <div className="min-w-0">
@@ -697,11 +719,15 @@ const CandidateJobDrawer: React.FC<CandidateJobDrawerProps> = ({
                         </div>
                         <div className="text-[11px] text-slate-500 whitespace-nowrap">{formatDateTime(a.createdAt)}</div>
                       </div>
-                      {a.decisionType === 'screening' && Array.isArray((a.details as any)?.questions) && (
-                        <div className="mt-2 text-[11px] text-slate-300">
-                          Q/A: {((a.details as any).questions as any[]).length} questions
-                        </div>
-                      )}
+                      {a.decisionType === 'screening' && (() => {
+                        const questions = a.details?.questions;
+                        if (!Array.isArray(questions)) return null;
+                        return (
+                          <div className="mt-2 text-[11px] text-slate-300">
+                            Q/A: {questions.length} questions
+                          </div>
+                        );
+                      })()}
                     </div>
                   ))}
                 </div>
@@ -722,34 +748,41 @@ const CandidateJobDrawer: React.FC<CandidateJobDrawerProps> = ({
                         <div className="min-w-0">
                           <div className="text-xs font-semibold text-slate-200">{e.eventType}</div>
                           <div className="text-[11px] text-slate-300 mt-1">{e.summary}</div>
-                          {typeof (e.metadata as any)?.disposition === 'object' && (e.metadata as any)?.disposition ? (
-                            <div className="mt-2 text-[11px] text-slate-300 space-y-1">
-                              <div className="text-slate-400">
-                                Reason:{' '}
-                                <span className="text-slate-200">
-                                  {(e.metadata as any).disposition.reasonCode === 'other'
-                                    ? (e.metadata as any).disposition.reasonText || 'other'
-                                    : (e.metadata as any).disposition.reasonCode}
-                                </span>
+                          {(() => {
+                            const disposition = asRecord(asRecord(e.metadata)?.disposition);
+                            if (!disposition) return null;
+                            const reasonCode = String(disposition.reasonCode ?? '');
+                            const reasonText = String(disposition.reasonText ?? '');
+                            const notes = String(disposition.notes ?? '');
+                            const compDelta = String(disposition.compDelta ?? '');
+                            const competingOffer = String(disposition.competingOffer ?? '');
+                            return (
+                              <div className="mt-2 text-[11px] text-slate-300 space-y-1">
+                                <div className="text-slate-400">
+                                  Reason:{' '}
+                                  <span className="text-slate-200">
+                                    {reasonCode === 'other' ? reasonText || 'other' : reasonCode}
+                                  </span>
+                                </div>
+                                {notes ? (
+                                  <div className="text-slate-400">
+                                    Notes: <span className="text-slate-200">{notes}</span>
+                                  </div>
+                                ) : null}
+                                {compDelta ? (
+                                  <div className="text-slate-400">
+                                    Comp delta: <span className="text-slate-200">{compDelta}</span>
+                                  </div>
+                                ) : null}
+                                {competingOffer ? (
+                                  <div className="text-slate-400">
+                                    Competing offer:{' '}
+                                    <span className="text-slate-200">{competingOffer}</span>
+                                  </div>
+                                ) : null}
                               </div>
-                              {(e.metadata as any).disposition.notes ? (
-                                <div className="text-slate-400">
-                                  Notes: <span className="text-slate-200">{(e.metadata as any).disposition.notes}</span>
-                                </div>
-                              ) : null}
-                              {(e.metadata as any).disposition.compDelta ? (
-                                <div className="text-slate-400">
-                                  Comp delta: <span className="text-slate-200">{(e.metadata as any).disposition.compDelta}</span>
-                                </div>
-                              ) : null}
-                              {(e.metadata as any).disposition.competingOffer ? (
-                                <div className="text-slate-400">
-                                  Competing offer:{' '}
-                                  <span className="text-slate-200">{(e.metadata as any).disposition.competingOffer}</span>
-                                </div>
-                              ) : null}
-                            </div>
-                          ) : null}
+                            );
+                          })()}
                           {(e.fromStage || e.toStage) && (
                             <div className="text-[11px] text-slate-500 mt-1">
                               {e.fromStage || '?'} → {e.toStage || '?'} • {e.actorType}
@@ -853,8 +886,8 @@ const CandidateJobDrawer: React.FC<CandidateJobDrawerProps> = ({
         <ScheduleInterviewModal
           isOpen={scheduleModalOpen}
           onClose={() => setScheduleModalOpen(false)}
-          candidate={candidate as any}
-          job={job as any}
+          candidate={candidate}
+          job={job}
         />
       )}
 

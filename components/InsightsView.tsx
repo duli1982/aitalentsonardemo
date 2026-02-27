@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { BarChart2, TrendingUp, Zap, ChevronDown, ChevronUp, Briefcase, Users, Target } from 'lucide-react';
 import { DepartmentInsight } from '../types';
+import { TIMING } from '../config/timing';
 
 interface InsightsViewProps {
     insights: DepartmentInsight[];
@@ -65,7 +66,7 @@ const InsightsView: React.FC<InsightsViewProps> = ({ insights, source = 'jobs' }
                 ...trend,
                 growth: Math.min(99, Math.max(10, trend.growth + (Math.random() > 0.5 ? 1 : -1) * Math.floor(Math.random() * 3)))
             })));
-        }, 3000);
+        }, TIMING.INSIGHTS_TRENDS_UPDATE_INTERVAL_MS);
         return () => clearInterval(interval);
     }, []);
 

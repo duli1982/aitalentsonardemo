@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { Job, Candidate, PipelineStage } from '../types';
 import { useData } from '../contexts/DataContext';
+import { useCandidateJobDrawer } from '../contexts/CandidateJobDrawerContext';
 import { Search, User, Users, CheckCircle, XCircle, MessageSquare, Calendar, Briefcase, ChevronRight, AlertTriangle, X, PanelRightOpen, ShieldCheck } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import JobDetailsDrawer from './modals/JobDetailsDrawer';
@@ -9,7 +10,6 @@ import PipelineFairnessModal from './modals/PipelineFairnessModal';
 interface PipelineViewProps {
   job: Job | undefined;
   onUpdateCandidateStage: (candidateId: string, jobId: string, newStage: PipelineStage) => void;
-  onOpenCandidateJobDrawer: (candidate: Candidate, job: Job) => void;
 }
 
 const STAGES: { id: PipelineStage; label: string; icon: React.ReactNode; color: string }[] = [
@@ -137,8 +137,9 @@ const PipelineColumn: React.FC<{
   );
 };
 
-const PipelineView: React.FC<PipelineViewProps> = ({ job, onUpdateCandidateStage, onOpenCandidateJobDrawer }) => {
+const PipelineView: React.FC<PipelineViewProps> = ({ job, onUpdateCandidateStage }) => {
   const { internalCandidates, pastCandidates, uploadedCandidates } = useData();
+  const drawerContext = useCandidateJobDrawer();
   const { showToast } = useToast();
   const [jobDetailsOpen, setJobDetailsOpen] = useState(false);
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
@@ -322,7 +323,11 @@ const PipelineView: React.FC<PipelineViewProps> = ({ job, onUpdateCandidateStage
               candidates={candidatesByStage[stage.id]}
               jobId={job.id}
               onUpdateStage={requestStageMove}
-              onView={(candidate) => onOpenCandidateJobDrawer(candidate, job)}
+              onView={(candidate) => {
+                if (drawerContext) {
+                  drawerContext.openCandidateJobDrawer(candidate, job);
+                }
+              }}
             />
           ))}
         </div>

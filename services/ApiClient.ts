@@ -3,6 +3,7 @@
 
 import { storage } from '../utils/StorageAdapter';
 import { NetworkError } from '../types/errors';
+import { TIMING } from '../config/timing';
 
 interface FetchOptions extends RequestInit {
     timeout?: number;
@@ -83,7 +84,7 @@ class ApiClient {
         endpoint: string,
         options: FetchOptions
     ): Promise<ApiResponse<T>> {
-        await new Promise(resolve => setTimeout(resolve, 100)); // Simulate latency
+        await new Promise(resolve => setTimeout(resolve, TIMING.API_CLIENT_MOCK_LATENCY_MS)); // Simulate latency
 
         const method = options.method || 'GET';
         const storageKey = endpoint.replace(/^\//, '').replace(/\//g, '_');

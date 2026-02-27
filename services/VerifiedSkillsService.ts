@@ -8,17 +8,41 @@ import { notConfigured, upstream } from './errorHandling';
 import { eventBus, EVENTS } from '../utils/EventBus';
 
 const SERVICE = 'VerifiedSkillsService';
+type CandidatePassport = NonNullable<Candidate['passport']>;
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((item) => String(item)) : [];
+}
+
+function asValidatedSkills(value: unknown): ValidatedSkill[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => asRecord(item))
+    .filter((item) => typeof item.skillName === 'string')
+    .map((item) => ({
+      skillName: String(item.skillName),
+      proficiencyLevel: Number(item.proficiencyLevel ?? 0),
+      verifiedAt: String(item.verifiedAt ?? new Date().toISOString()),
+      source: String(item.source ?? 'assessment'),
+      confidenceScore: typeof item.confidenceScore === 'number' ? item.confidenceScore : 0.8,
+      evidenceLink: typeof item.evidenceLink === 'string' ? item.evidenceLink : undefined
+    }));
+}
 
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
-function mergeVerifiedSkills(existing: any[], delta: ValidatedSkill[]): ValidatedSkill[] {
-  const next = [...(Array.isArray(existing) ? existing : [])] as ValidatedSkill[];
+function mergeVerifiedSkills(existing: ValidatedSkill[], delta: ValidatedSkill[]): ValidatedSkill[] {
+  const next = [...existing];
   delta.forEach((d) => {
-    const idx = next.findIndex((s) => String((s as any)?.skillName || '').toLowerCase() === String(d.skillName).toLowerCase());
+    const idx = next.findIndex((s) => String(s.skillName || '').toLowerCase() === String(d.skillName).toLowerCase());
     if (idx >= 0) {
-      const prevLevel = Number((next[idx] as any)?.proficiencyLevel ?? 0);
+      const prevLevel = Number(next[idx]?.proficiencyLevel ?? 0);
       if (Number(d.proficiencyLevel) >= prevLevel) next[idx] = d;
     } else {
       next.push(d);
@@ -59,14 +83,14 @@ export function proposeVerifiedSkillsFromAssessment(params: {
 }): ProposedAction | null {
   const { candidate, jobId, assessment, inferred } = params;
 
-  const existingSkills = (candidate.passport?.verifiedSkills ?? []) as any[];
+  const existingSkills = candidate.passport?.verifiedSkills ?? [];
   const existingBadges = candidate.passport?.badges ?? [];
 
   const existingByName = new Map<string, number>();
-  existingSkills.forEach((s: any) => {
-    const name = String(s?.skillName || '').toLowerCase();
+  existingSkills.forEach((s) => {
+    const name = String(s.skillName || '').toLowerCase();
     if (!name) return;
-    existingByName.set(name, Number(s?.proficiencyLevel ?? 0));
+    existingByName.set(name, Number(s.proficiencyLevel ?? 0));
   });
 
   const verifiedSkillsDelta = inferred.verifiedSkills.filter((s) => {
@@ -105,9 +129,9 @@ export function proposeVerifiedSkillsFromAssessment(params: {
   });
 }
 
-export async function applyVerifiedSkillsProposal(action: ProposedAction): Promise<Result<{ skills: string[]; passport: any }>> {
+export async function applyVerifiedSkillsProposal(action: ProposedAction): Promise<Result<{ skills: string[]; passport: CandidatePassport }>> {
   if (action.payload.type !== 'UPDATE_VERIFIED_SKILLS') {
-    return err(upstream(SERVICE, 'Not a verified-skills proposal.', null), { data: null as any });
+    return err(upstream(SERVICE, 'Not a verified-skills proposal.', null));
   }
 
   const { candidateId, verifiedSkillsDelta, badgesAdded, skillsAdded, assessment } = action.payload;
@@ -124,7 +148,7 @@ export async function applyVerifiedSkillsProposal(action: ProposedAction): Promi
     return ok({ skills: skillsAdded, passport: { verifiedSkills: verifiedSkillsDelta, badges: badgesAdded } });
   }
 
-  if (!supabase) return err(notConfigured(SERVICE, 'Supabase is not configured.'), { data: null as any });
+  if (!supabase) return err(notConfigured(SERVICE, 'Supabase is not configured.'));
 
   try {
     const { data: row, error: fetchError } = await supabase
@@ -133,19 +157,18 @@ export async function applyVerifiedSkillsProposal(action: ProposedAction): Promi
       .eq('id', candidateId)
       .maybeSingle();
 
-    if (fetchError) {
-      return err(upstream(SERVICE, `Failed to load candidate system-of-record for ${candidateId}.`, fetchError), { data: null as any });
-    }
+    if (fetchError) return err(upstream(SERVICE, `Failed to load candidate system-of-record for ${candidateId}.`, fetchError));
 
-    const existingSkills = (row as any)?.skills;
+    const rowRecord = asRecord(row);
+    const existingSkills = rowRecord.skills;
     const nextSkills = mergeDistinctStrings(existingSkills, skillsAdded);
 
-    const existingMeta = ((row as any)?.metadata ?? {}) as Record<string, any>;
-    const existingPassport = existingMeta.passport ?? {};
+    const existingMeta = asRecord(rowRecord.metadata);
+    const existingPassport = asRecord(existingMeta.passport);
     const mergedPassport = {
-      verifiedSkills: mergeVerifiedSkills(existingPassport.verifiedSkills, verifiedSkillsDelta),
-      badges: Array.from(new Set([...(existingPassport.badges ?? []), ...badgesAdded]))
-    };
+      verifiedSkills: mergeVerifiedSkills(asValidatedSkills(existingPassport.verifiedSkills), verifiedSkillsDelta),
+      badges: Array.from(new Set([...asStringArray(existingPassport.badges), ...badgesAdded]))
+    } satisfies CandidatePassport;
 
     const assessmentHistory = Array.isArray(existingMeta.assessmentHistory) ? existingMeta.assessmentHistory : [];
     const nextAssessmentHistory = [
@@ -168,11 +191,11 @@ export async function applyVerifiedSkillsProposal(action: ProposedAction): Promi
 
     const { error: updateError } = await supabase
       .from('candidates')
-      .update({ skills: nextSkills, metadata: nextMeta, updated_at: new Date().toISOString() } as any)
+      .update({ skills: nextSkills, metadata: nextMeta, updated_at: new Date().toISOString() })
       .eq('id', candidateId);
 
     if (updateError) {
-      return err(upstream(SERVICE, 'Failed to persist verified skills to Supabase.', updateError), { data: null as any });
+      return err(upstream(SERVICE, 'Failed to persist verified skills to Supabase.', updateError));
     }
 
     eventBus.emit(EVENTS.CANDIDATE_UPDATED, {
@@ -185,6 +208,6 @@ export async function applyVerifiedSkillsProposal(action: ProposedAction): Promi
     });
     return ok({ skills: nextSkills, passport: mergedPassport });
   } catch (e) {
-    return err(upstream(SERVICE, 'Verified skills apply threw unexpectedly.', e), { data: null as any });
+    return err(upstream(SERVICE, 'Verified skills apply threw unexpectedly.', e));
   }
 }

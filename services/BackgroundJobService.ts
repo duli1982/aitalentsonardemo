@@ -24,7 +24,7 @@ export interface JobResult {
     jobId: string;
     success: boolean;
     message: string;
-    data?: any;
+    data?: unknown;
     timestamp: Date;
 }
 
@@ -37,7 +37,7 @@ class BackgroundJobService {
     /**
      * Register a new background job
      */
-    registerJob(job: Omit<BackgroundJob, 'id'>): string {
+    registerJob(job: Omit<BackgroundJob, 'id' | 'status' | 'lastRun' | 'nextRun'>): string {
         const id = `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
         const fullJob: BackgroundJob = {

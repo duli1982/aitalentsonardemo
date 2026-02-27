@@ -20,8 +20,20 @@ class IntakeCallPersistenceService {
     return Boolean(supabase);
   }
 
+  private async canUseSupabase(): Promise<boolean> {
+    if (!supabase) return false;
+    try {
+      const { data, error } = await supabase.auth.getUser();
+      if (error) return false;
+      return Boolean(data?.user?.id);
+    } catch {
+      return false;
+    }
+  }
+
   async upsertSession(session: IntakeCallSession): Promise<void> {
-    if (supabase) {
+    const db = (await this.canUseSupabase()) ? supabase : null;
+    if (db) {
       const payload = {
         id: session.id,
         job_id: session.jobId,
@@ -35,7 +47,7 @@ class IntakeCallPersistenceService {
         updated_at: new Date().toISOString()
       };
 
-      const { error } = await supabase.from('intake_call_sessions').upsert(payload, { onConflict: 'id' });
+      const { error } = await db.from('intake_call_sessions').upsert(payload, { onConflict: 'id' });
       if (error) {
         console.warn('[IntakeCallPersistence] Session upsert failed:', error);
       }
@@ -51,8 +63,9 @@ class IntakeCallPersistenceService {
   }
 
   async getSessionsByJob(jobId: string): Promise<IntakeCallSession[]> {
-    if (supabase) {
-      const { data, error } = await supabase
+    const db = (await this.canUseSupabase()) ? supabase : null;
+    if (db) {
+      const { data, error } = await db
         .from('intake_call_sessions')
         .select('*')
         .eq('job_id', jobId)
@@ -67,8 +80,27 @@ class IntakeCallPersistenceService {
     return Object.values(all).filter((s) => s.jobId === jobId);
   }
 
+  async getSessionById(sessionId: string): Promise<IntakeCallSession | null> {
+    const db = (await this.canUseSupabase()) ? supabase : null;
+    if (db) {
+      const { data, error } = await db
+        .from('intake_call_sessions')
+        .select('*')
+        .eq('id', sessionId)
+        .maybeSingle();
+
+      if (!error && data) {
+        return this.mapSessionRow(data);
+      }
+    }
+
+    const all = this.loadLocalMap<IntakeCallSession>(LOCAL_SESSIONS_KEY);
+    return all[sessionId] ?? null;
+  }
+
   async upsertScorecard(scorecard: IntakeScorecard): Promise<void> {
-    if (supabase) {
+    const db = (await this.canUseSupabase()) ? supabase : null;
+    if (db) {
       const nowIso = new Date().toISOString();
       const payload = {
         id: scorecard.id,
@@ -88,7 +120,7 @@ class IntakeCallPersistenceService {
 
       if (scorecard.status === 'approved') {
         // Keep DB state compatible with one-approved-per-job constraint.
-        await supabase
+        await db
           .from('intake_scorecards')
           .update({ status: 'revised', updated_at: nowIso })
           .eq('job_id', scorecard.jobId)
@@ -96,18 +128,18 @@ class IntakeCallPersistenceService {
           .neq('id', scorecard.id);
       }
 
-      let { error } = await supabase.from('intake_scorecards').upsert(payload, { onConflict: 'id' });
+      let { error } = await db.from('intake_scorecards').upsert(payload, { onConflict: 'id' });
 
       // Retry once for unique conflict races.
       if (error && String((error as any)?.code || '') === '23505' && scorecard.status === 'approved') {
-        await supabase
+        await db
           .from('intake_scorecards')
           .update({ status: 'revised', updated_at: nowIso })
           .eq('job_id', scorecard.jobId)
           .eq('status', 'approved')
           .neq('id', scorecard.id);
 
-        const retry = await supabase.from('intake_scorecards').upsert(payload, { onConflict: 'id' });
+        const retry = await db.from('intake_scorecards').upsert(payload, { onConflict: 'id' });
         error = retry.error;
       }
 
@@ -142,8 +174,9 @@ class IntakeCallPersistenceService {
   }
 
   async getScorecardByJob(jobId: string): Promise<IntakeScorecard | null> {
-    if (supabase) {
-      const { data, error } = await supabase
+    const db = (await this.canUseSupabase()) ? supabase : null;
+    if (db) {
+      const { data, error } = await db
         .from('intake_scorecards')
         .select('*')
         .eq('job_id', jobId)
@@ -165,8 +198,9 @@ class IntakeCallPersistenceService {
   }
 
   async getApprovedScorecardForJob(jobId: string): Promise<IntakeScorecard | null> {
-    if (supabase) {
-      const { data, error } = await supabase
+    const db = (await this.canUseSupabase()) ? supabase : null;
+    if (db) {
+      const { data, error } = await db
         .from('intake_scorecards')
         .select('*')
         .eq('job_id', jobId)
@@ -231,4 +265,3 @@ class IntakeCallPersistenceService {
 }
 
 export const intakeCallPersistenceService = new IntakeCallPersistenceService();
-

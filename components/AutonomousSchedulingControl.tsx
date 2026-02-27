@@ -3,6 +3,7 @@ import { Calendar, Play, Pause, Clock, CheckCircle, AlertCircle, Zap, Link as Li
 import type { Job } from '../types';
 import { autonomousSchedulingAgent, type MeetingProvider, type ScheduledInterview } from '../services/AutonomousSchedulingAgent';
 import { agentSettingsService } from '../services/AgentSettingsService';
+import { TIMING } from '../config/timing';
 
 interface AutonomousSchedulingControlProps {
     jobs: Job[];
@@ -91,7 +92,7 @@ const AutonomousSchedulingControl: React.FC<AutonomousSchedulingControlProps> = 
         setMeetingProvider(autonomousSchedulingAgent.getMeetingProvider());
         const refresh = () => setStatus(autonomousSchedulingAgent.getStatus());
         refresh();
-        const interval = setInterval(refresh, 30000);
+        const interval = setInterval(refresh, TIMING.SCHEDULING_CONTROL_REFRESH_INTERVAL_MS);
         return () => clearInterval(interval);
     }, []);
 
@@ -103,14 +104,14 @@ const AutonomousSchedulingControl: React.FC<AutonomousSchedulingControlProps> = 
         const newState = !status?.enabled;
         agentSettingsService.setEnabled('scheduling', newState);
         autonomousSchedulingAgent.setEnabled(newState);
-        setTimeout(() => setStatus(autonomousSchedulingAgent.getStatus()), 100);
+        setTimeout(() => setStatus(autonomousSchedulingAgent.getStatus()), TIMING.UI_DELAY_MS);
     };
 
     const handleManualRun = async () => {
         setIsRefreshing(true);
         try {
             await autonomousSchedulingAgent.triggerProcessing();
-            setTimeout(() => setStatus(autonomousSchedulingAgent.getStatus()), 250);
+            setTimeout(() => setStatus(autonomousSchedulingAgent.getStatus()), TIMING.MEDIUM_UI_DELAY_MS);
         } finally {
             setIsRefreshing(false);
         }
@@ -128,7 +129,7 @@ const AutonomousSchedulingControl: React.FC<AutonomousSchedulingControlProps> = 
 
             // Process immediately for demo responsiveness.
             await autonomousSchedulingAgent.triggerProcessing();
-            setTimeout(() => setStatus(autonomousSchedulingAgent.getStatus()), 250);
+            setTimeout(() => setStatus(autonomousSchedulingAgent.getStatus()), TIMING.MEDIUM_UI_DELAY_MS);
         } finally {
             setIsRefreshing(false);
             setRescheduleForInterviewId(null);
@@ -140,7 +141,7 @@ const AutonomousSchedulingControl: React.FC<AutonomousSchedulingControlProps> = 
     const handleProviderChange = (provider: MeetingProvider) => {
         setMeetingProvider(provider);
         autonomousSchedulingAgent.setMeetingProvider(provider);
-        setTimeout(() => setStatus(autonomousSchedulingAgent.getStatus()), 50);
+        setTimeout(() => setStatus(autonomousSchedulingAgent.getStatus()), TIMING.FAST_UI_DELAY_MS);
     };
 
     const handleQueue = () => {
@@ -160,7 +161,7 @@ const AutonomousSchedulingControl: React.FC<AutonomousSchedulingControlProps> = 
 
         setCandidateName('');
         setCandidateEmail('');
-        setTimeout(() => setStatus(autonomousSchedulingAgent.getStatus()), 50);
+        setTimeout(() => setStatus(autonomousSchedulingAgent.getStatus()), TIMING.FAST_UI_DELAY_MS);
     };
 
     if (!status) return <div className="text-slate-400">Loading scheduling agent status...</div>;

@@ -1,7 +1,7 @@
 import type { AppError } from './errors';
 
 export type Result<T> =
-  | { success: true; data: T; warnings?: AppError[] }
+  | { success: true; data: T; warnings?: AppError[]; error?: undefined; retryAfterMs?: undefined }
   | { success: false; error: AppError; retryAfterMs?: number; data?: T; warnings?: AppError[] };
 
 export function ok<T>(data: T, warnings?: AppError[]): Result<T> {
@@ -17,4 +17,3 @@ export function err<T = never>(error: AppError, params?: { retryAfterMs?: number
     warnings: params?.warnings
   };
 }
-

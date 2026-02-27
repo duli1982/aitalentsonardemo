@@ -20,8 +20,27 @@ import type {
 
 const STORAGE_KEY = 'intake_call_sessions_v1';
 
+type SpeechRecognitionResultAlternative = { transcript?: string };
+type SpeechRecognitionResultLike = { isFinal?: boolean; 0?: SpeechRecognitionResultAlternative };
+type SpeechRecognitionEventLike = {
+  resultIndex: number;
+  results: ArrayLike<SpeechRecognitionResultLike>;
+};
+type SpeechRecognitionErrorEventLike = {
+  error?: string;
+};
+type SpeechRecognitionLike = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
+  start: () => void;
+  stop: () => void;
+};
+
 function generateUuid(): string {
-  const c = (globalThis as any)?.crypto;
+  const c = globalThis.crypto;
   if (typeof c?.randomUUID === 'function') {
     return c.randomUUID();
   }
@@ -39,7 +58,7 @@ function generateId(): string {
 
 class IntakeCallService {
   private activeSessions: Map<string, IntakeCallSession> = new Map();
-  private recognition: any = null; // SpeechRecognition instance
+  private recognition: SpeechRecognitionLike | null = null; // SpeechRecognition instance
 
   /**
    * Start a new intake call session for a job
@@ -108,8 +127,12 @@ class IntakeCallService {
     speakerName: string,
     speakerRole: IntakeParticipant['role']
   ): boolean {
+    const withRecognition = window as Window & {
+      SpeechRecognition?: new () => SpeechRecognitionLike;
+      webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+    };
     const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      withRecognition.SpeechRecognition || withRecognition.webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
       console.warn('[IntakeCallService] SpeechRecognition not available in this browser.');
@@ -121,10 +144,11 @@ class IntakeCallService {
     this.recognition.interimResults = false;
     this.recognition.lang = 'en-US';
 
-    this.recognition.onresult = (event: any) => {
+    this.recognition.onresult = (event: SpeechRecognitionEventLike) => {
       for (let i = event.resultIndex; i < event.results.length; i++) {
-        if (event.results[i].isFinal) {
-          const text = event.results[i][0].transcript.trim();
+        const result = event.results[i];
+        if (result?.isFinal) {
+          const text = String(result[0]?.transcript || '').trim();
           if (text) {
             this.addTranscriptLine(sessionId, speakerName, speakerRole, text);
           }
@@ -132,7 +156,7 @@ class IntakeCallService {
       }
     };
 
-    this.recognition.onerror = (event: any) => {
+    this.recognition.onerror = (event: SpeechRecognitionErrorEventLike) => {
       console.error('[IntakeCallService] Speech recognition error:', event.error);
     };
 
@@ -217,10 +241,13 @@ class IntakeCallService {
 
     await intakeCallPersistenceService.upsertScorecard(scorecard);
 
-    // Mark the session as approved too
-    const session = this.activeSessions.get(scorecard.sessionId);
+    // Mark the session as approved too (works even after reload/no in-memory session).
+    const inMemory = this.activeSessions.get(scorecard.sessionId);
+    const session = inMemory ?? await intakeCallPersistenceService.getSessionById(scorecard.sessionId);
     if (session) {
       session.status = 'approved';
+      session.endedAt = session.endedAt ?? new Date().toISOString();
+      this.activeSessions.set(session.id, session);
       this.persistLocal(session);
       await intakeCallPersistenceService.upsertSession(session);
     }
@@ -307,54 +334,55 @@ For each criterion, include:
 Return JSON only.`;
 
     try {
-      const result = await aiService.generateText(prompt, {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            summary: { type: Type.STRING },
-            mustHave: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  criterion: { type: Type.STRING },
-                  weight: { type: Type.NUMBER },
-                  category: { type: Type.STRING },
-                  evidenceFromCall: { type: Type.STRING },
-                },
-                required: ['criterion', 'weight', 'category', 'evidenceFromCall'],
-              },
-            },
-            niceToHave: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  criterion: { type: Type.STRING },
-                  weight: { type: Type.NUMBER },
-                  category: { type: Type.STRING },
-                  evidenceFromCall: { type: Type.STRING },
-                },
-                required: ['criterion', 'weight', 'category', 'evidenceFromCall'],
-              },
-            },
-            idealProfile: { type: Type.STRING },
-            redFlags: { type: Type.ARRAY, items: { type: Type.STRING } },
-            roleContext: {
+      const scorecardSchema = {
+        type: Type.OBJECT,
+        properties: {
+          summary: { type: Type.STRING },
+          mustHave: {
+            type: Type.ARRAY,
+            items: {
               type: Type.OBJECT,
               properties: {
-                teamSize: { type: Type.STRING },
-                reportingTo: { type: Type.STRING },
-                growthPath: { type: Type.STRING },
-                urgency: { type: Type.STRING },
-                budgetRange: { type: Type.STRING },
-                workModel: { type: Type.STRING },
+                criterion: { type: Type.STRING },
+                weight: { type: Type.NUMBER },
+                category: { type: Type.STRING },
+                evidenceFromCall: { type: Type.STRING },
               },
+              required: ['criterion', 'weight', 'category', 'evidenceFromCall'],
             },
           },
-          required: ['summary', 'mustHave', 'niceToHave', 'idealProfile', 'redFlags', 'roleContext'],
+          niceToHave: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                criterion: { type: Type.STRING },
+                weight: { type: Type.NUMBER },
+                category: { type: Type.STRING },
+                evidenceFromCall: { type: Type.STRING },
+              },
+              required: ['criterion', 'weight', 'category', 'evidenceFromCall'],
+            },
+          },
+          idealProfile: { type: Type.STRING },
+          redFlags: { type: Type.ARRAY, items: { type: Type.STRING } },
+          roleContext: {
+            type: Type.OBJECT,
+            properties: {
+              teamSize: { type: Type.STRING },
+              reportingTo: { type: Type.STRING },
+              growthPath: { type: Type.STRING },
+              urgency: { type: Type.STRING },
+              budgetRange: { type: Type.STRING },
+              workModel: { type: Type.STRING },
+            },
+          },
         },
+        required: ['summary', 'mustHave', 'niceToHave', 'idealProfile', 'redFlags', 'roleContext'],
+      };
+
+      const result = await aiService.generateText(prompt, {
+        schema: scorecardSchema,
       });
 
       if (!result.success) {
@@ -385,17 +413,19 @@ Return JSON only.`;
     }
   }
 
-  private normalizeCriteria(raw: any[]): IntakeScorecardCriterion[] {
+  private normalizeCriteria(raw: unknown[]): IntakeScorecardCriterion[] {
     if (!Array.isArray(raw)) return [];
     return raw
-      .map((item) => ({
-        criterion: String(item.criterion || '').trim(),
-        weight: Math.max(1, Math.min(5, Number(item.weight) || 3)),
-        category: (['technical', 'experience', 'soft_skill', 'cultural', 'other'].includes(item.category)
-          ? item.category
+      .map((item) => {
+        const row = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
+        return {
+        criterion: String(row.criterion || '').trim(),
+        weight: Math.max(1, Math.min(5, Number(row.weight) || 3)),
+        category: (['technical', 'experience', 'soft_skill', 'cultural', 'other'].includes(String(row.category))
+          ? String(row.category)
           : 'other') as IntakeScorecardCriterion['category'],
-        evidenceFromCall: String(item.evidenceFromCall || '').trim(),
-      }))
+        evidenceFromCall: String(row.evidenceFromCall || '').trim(),
+      }; })
       .filter((c) => c.criterion.length > 0);
   }
 

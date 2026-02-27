@@ -3,6 +3,7 @@ import { careerPathService } from '../services/CareerPathService';
 import { CareerPath, BuildVsBuyMetrics } from '../types/career';
 import { useData } from '../contexts/DataContext';
 import { ArrowRight, Clock, DollarSign, TrendingUp, Users, Map, CheckCircle, AlertTriangle, Loader2 } from 'lucide-react';
+import { TIMING } from '../config/timing';
 
 const MobilityPage: React.FC = () => {
     const { internalCandidates } = useData();
@@ -49,7 +50,7 @@ const MobilityPage: React.FC = () => {
             setPath(careerPathService.generatePath(selectedRole, targetRole, domain));
             setMetrics(careerPathService.analyzeBuildVsBuy(targetRole, domain, { urgency, targetHires: domain === 'staffing' ? targetHires : 1 }));
             setIsLoading(false);
-        }, 1200);
+        }, TIMING.MOBILITY_PATH_SIMULATION_DELAY_MS);
     };
 
     const internalMatches = useMemo(() => {

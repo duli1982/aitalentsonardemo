@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { LayoutGrid, Maximize, MousePointer2, UserPlus, Users, MessageSquare } from 'lucide-react';
+import { TIMING } from '../config/timing';
 
 interface GhostCursor {
     id: string;
@@ -25,7 +26,7 @@ const WarRoomPage: React.FC = () => {
                 y: c.y + (Math.random() - 0.5) * 50,
                 action: Math.random() > 0.8 ? (Math.random() > 0.5 ? 'viewing' : 'moving') : undefined
             })));
-        }, 800);
+        }, TIMING.WAR_ROOM_CURSOR_INTERVAL_MS);
         return () => clearInterval(interval);
     }, []);
 

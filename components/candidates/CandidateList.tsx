@@ -21,13 +21,16 @@ interface CandidateListProps {
 const getCompanySchoolData = (candidate: Candidate) => {
     const companies: string[] = [];
     const schools: string[] = [];
+    const metadata = candidate.metadata && typeof candidate.metadata === 'object'
+        ? (candidate.metadata as Record<string, unknown>)
+        : {};
 
     // Try to get from metadata (for Supabase candidates)
-    if ((candidate as any).companies) {
-        companies.push(...(candidate as any).companies);
+    if (Array.isArray(metadata.companies)) {
+        companies.push(...metadata.companies.map((company) => String(company)));
     }
-    if ((candidate as any).schools) {
-        schools.push(...(candidate as any).schools);
+    if (Array.isArray(metadata.schools)) {
+        schools.push(...metadata.schools.map((school) => String(school)));
     }
 
     return { companies, schools };
@@ -109,6 +112,10 @@ const CandidateList: React.FC<CandidateListProps> = ({ candidates, selectedCandi
                 {candidates.length > 0 ? (
                     candidates.map((candidate, index) => {
                         const isSelected = selectedForComparison.includes(candidate.id);
+                        const experienceYears = candidate.experienceYears ?? candidate.experience ?? 0;
+                        const candidateLocation =
+                            candidate.location ||
+                            (typeof candidate.metadata?.location === 'string' ? candidate.metadata.location : '');
                         return (
                             <div
                                 key={candidate.id}
@@ -149,16 +156,16 @@ const CandidateList: React.FC<CandidateListProps> = ({ candidates, selectedCandi
                                                 {candidate.name}
                                             </h3>
                                             <div className="flex items-center gap-2 text-[10px] text-gray-400">
-                                                {((candidate as any).experienceYears || 0) > 0 && (
+                                                {experienceYears > 0 && (
                                                     <span className="flex items-center gap-1">
                                                         <Briefcase className="h-3 w-3" />
-                                                        {(candidate as any).experienceYears} yrs
+                                                        {experienceYears} yrs
                                                     </span>
                                                 )}
-                                                {((candidate as any).location || candidate.location) && (
+                                                {candidateLocation && (
                                                     <span className="flex items-center gap-1">
                                                         <MapPin className="h-3 w-3" />
-                                                        {(candidate as any).location || candidate.location}
+                                                        {candidateLocation}
                                                     </span>
                                                 )}
                                             </div>

@@ -3,6 +3,7 @@ import { supabase } from '../services/supabaseClient';
 import type { DepartmentInsight } from '../types';
 import { degradedModeService } from '../services/DegradedModeService';
 import { upstream } from '../services/errorHandling';
+import { TIMING } from '../config/timing';
 
 export interface SupabaseCandidateInsightsOptions {
     enabled?: boolean;
@@ -36,7 +37,7 @@ const buildInsightsFromCounts = (counts: Map<string, Map<string, number>>): Depa
  * Uses `candidate_documents.metadata` only and paginates through all rows.
  */
 export const useSupabaseCandidateInsights = (options: SupabaseCandidateInsightsOptions = {}) => {
-    const { enabled = true, pageSize = 1000, cacheTtlMs = 5 * 60 * 1000 } = options;
+    const { enabled = true, pageSize = 1000, cacheTtlMs = TIMING.CACHE_TTL_MS } = options;
 
     const [insights, setInsights] = useState<DepartmentInsight[]>([]);
     const [isLoading, setIsLoading] = useState(false);
