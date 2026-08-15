@@ -55,7 +55,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ error, setError, onOpenSmartSea
     };
 
     return (
-        <div className="h-screen overflow-hidden bg-slate-950 text-gray-100 font-sans lg:flex">
+        <div className="talent-app h-screen overflow-hidden bg-slate-950 text-gray-100 font-sans lg:flex">
             <AppSidebar activeView={activeView} onViewChange={handleViewChange} />
             <div className="flex h-screen min-w-0 flex-1 flex-col overflow-y-auto">
                 <Header
@@ -69,7 +69,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ error, setError, onOpenSmartSea
                     onOpenGlobalSearch={() => setGlobalSearchOpen(true)}
                 />
 
-                <div className="mx-auto w-full max-w-[1600px] px-4 pt-4 sm:px-6 lg:px-8">
+                <div className="mx-auto w-full max-w-[1600px] px-4 pt-5 sm:px-6 lg:px-8">
                     <DegradedModeBanner />
                 </div>
 
@@ -81,7 +81,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ error, setError, onOpenSmartSea
                 </div>
             )}
 
-            <main className="mx-auto flex w-full max-w-[1600px] flex-grow flex-col p-4 sm:p-6 lg:p-8">
+            <main id="main-content" className="mx-auto flex w-full max-w-[1600px] flex-grow flex-col p-4 sm:p-6 lg:px-8 lg:pb-10 lg:pt-7">
                 <Outlet />
             </main>
             <GlobalSearch isOpen={globalSearchOpen} onClose={() => setGlobalSearchOpen(false)} />

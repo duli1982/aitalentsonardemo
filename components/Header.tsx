@@ -87,7 +87,7 @@ const Header: React.FC<HeaderProps> = ({ activeView, onViewChange, onOpenSmartSe
 
     return (
         <>
-            <header className="bg-slate-900 border-b border-slate-700 h-16 flex items-center justify-between px-4 md:px-6 sticky top-0 z-50">
+            <header className="app-header bg-slate-900 border-b border-slate-800 h-16 flex items-center justify-between px-4 md:px-6 sticky top-0 z-50">
                 {/* Logo */}
                 <div className="flex items-center space-x-2 lg:hidden">
                     <div className="bg-gradient-to-tr from-sky-500 to-indigo-600 p-2 rounded-lg shadow-lg shadow-sky-900/20">
@@ -140,13 +140,13 @@ const Header: React.FC<HeaderProps> = ({ activeView, onViewChange, onOpenSmartSe
                 {/* Right side buttons */}
                 <div className="flex items-center space-x-2">
                     <AgentStatusIndicator onOpenAutonomousAgents={() => onViewChange('autonomous-agents')} />
-                    {onOpenGlobalSearch && <button type="button" onClick={onOpenGlobalSearch} className="hidden md:inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-700"><Search className="h-4 w-4 text-sky-300" />Search <span className="rounded border border-slate-600 px-1 text-[10px] text-slate-500">⌘K</span></button>}
+                    {onOpenGlobalSearch && <button type="button" onClick={onOpenGlobalSearch} className="header-search hidden md:inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-700"><Search className="h-4 w-4 text-sky-300" />Search <span className="rounded border border-slate-600 px-1 text-[10px] text-slate-400">⌘K</span></button>}
 
                     <div className="relative hidden md:block">
                         <button
                             type="button"
                             onClick={() => setIsOrganizationMenuOpen((value) => !value)}
-                            className="flex max-w-56 items-center gap-2 rounded-full border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-700"
+                            className="flex max-w-56 items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-slate-200 hover:bg-slate-700"
                             aria-expanded={isOrganizationMenuOpen}
                         >
                             <Building2 className="h-4 w-4 text-sky-300" />
@@ -171,7 +171,7 @@ const Header: React.FC<HeaderProps> = ({ activeView, onViewChange, onOpenSmartSe
                     {onOpenUploadCv && (
                         <button
                             onClick={onOpenUploadCv}
-                            className="hidden sm:flex items-center px-3 py-1.5 md:px-4 md:py-2 bg-slate-800 hover:bg-slate-700 text-white font-semibold rounded-full transition-all text-xs md:text-sm shadow-lg border border-slate-700"
+                            className="hidden sm:flex items-center px-3 py-1.5 md:px-4 md:py-2 bg-slate-800 hover:bg-slate-700 text-slate-100 font-semibold rounded-lg transition-all text-xs md:text-sm border border-slate-700"
                             title="Upload CVs - Create draft candidates for review"
                             aria-label="Upload CVs"
                             type="button"
@@ -185,7 +185,7 @@ const Header: React.FC<HeaderProps> = ({ activeView, onViewChange, onOpenSmartSe
                     {onOpenSmartSearch && (
                         <button
                             onClick={onOpenSmartSearch}
-                            className="hidden sm:flex items-center px-3 py-1.5 md:px-4 md:py-2 bg-gradient-to-r from-sky-500 to-cyan-500 hover:from-sky-600 hover:to-cyan-600 text-white font-semibold rounded-full transition-all text-xs md:text-sm shadow-lg"
+                            className="primary-action hidden sm:flex items-center px-3 py-1.5 md:px-4 md:py-2 bg-sky-600 hover:bg-sky-500 text-white font-semibold rounded-lg transition-all text-xs md:text-sm shadow-lg"
                             title="AI Smart Search - Search the Knowledge Graph"
                             aria-label="AI Smart Search"
                         >
@@ -198,11 +198,11 @@ const Header: React.FC<HeaderProps> = ({ activeView, onViewChange, onOpenSmartSe
                     {onOpenRAG && (
                         <button
                             onClick={onOpenRAG}
-                            className="hidden sm:flex items-center px-3 py-1.5 md:px-4 md:py-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold rounded-full transition-all text-xs md:text-sm shadow-lg"
+                            className="hidden sm:flex items-center px-3 py-1.5 md:px-4 md:py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-lg transition-all text-xs md:text-sm border border-slate-700"
                             title="RAG Query - AI-powered responses with candidate context"
                             aria-label="RAG Query"
                         >
-                            <Brain className="h-4 w-4 mr-1 md:mr-2" aria-hidden="true" />
+                            <Brain className="h-4 w-4 mr-1 text-violet-300 md:mr-2" aria-hidden="true" />
                             <span className="hidden md:inline">RAG Query</span>
                         </button>
                     )}

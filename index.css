@@ -2,23 +2,135 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Talent Sonar visual system -------------------------------------------------
+   A calm, high-contrast recruiter workspace. Public careers routes are not
+   nested under .talent-app and intentionally retain their light presentation. */
+:root {
+  --ts-canvas: #08111f;
+  --ts-sidebar: #060d18;
+  --ts-surface: #111d2e;
+  --ts-surface-raised: #17243a;
+  --ts-surface-hover: #20324c;
+  --ts-border: #2b3b52;
+  --ts-border-soft: #203047;
+  --ts-text: #f1f5f9;
+  --ts-text-secondary: #a8b3c5;
+  --ts-text-muted: #7f8da3;
+  --ts-accent: #2f8fc6;
+  --ts-accent-strong: #1889c7;
+  --ts-focus: #7dd3fc;
+}
+
+.talent-app {
+  color-scheme: dark;
+  background: var(--ts-canvas) !important;
+  color: var(--ts-text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: -0.006em;
+}
+
+.talent-app .app-sidebar { background: var(--ts-sidebar) !important; }
+.talent-app .app-header {
+  background: rgba(8, 17, 31, 0.94) !important;
+  backdrop-filter: blur(16px);
+}
+.talent-app .brand-mark {
+  background: linear-gradient(145deg, #3a9acb, #5967c9) !important;
+  box-shadow: 0 8px 24px rgba(5, 14, 27, 0.38);
+}
+.talent-app .command-center-link.is-active,
+.talent-app .sidebar-link.is-active {
+  background: #172942 !important;
+  box-shadow: inset 3px 0 0 #4aa3d1;
+}
+.talent-app .primary-action {
+  background: var(--ts-accent-strong) !important;
+  box-shadow: 0 8px 20px rgba(9, 92, 139, 0.2);
+}
+.talent-app .primary-action:hover { background: #2397d1 !important; }
+
+/* Surface hierarchy. These selectors map the existing Tailwind vocabulary to
+   the refined palette so every current and future workspace benefits. */
+.talent-app .bg-slate-950 { background-color: var(--ts-canvas) !important; }
+.talent-app .bg-slate-900 { background-color: var(--ts-surface) !important; }
+.talent-app .bg-slate-800 { background-color: var(--ts-surface-raised) !important; }
+.talent-app .bg-slate-700 { background-color: var(--ts-surface-hover) !important; }
+.talent-app .bg-slate-900\/70,
+.talent-app .bg-slate-900\/80,
+.talent-app .bg-slate-900\/90 { background-color: rgba(17, 29, 46, 0.86) !important; }
+.talent-app .bg-slate-800\/50,
+.talent-app .bg-slate-800\/60,
+.talent-app .bg-slate-800\/70,
+.talent-app .bg-slate-800\/80 { background-color: rgba(23, 36, 58, 0.78) !important; }
+
+.talent-app .border-slate-800 { border-color: var(--ts-border-soft) !important; }
+.talent-app .border-slate-700 { border-color: var(--ts-border) !important; }
+.talent-app .border-slate-600 { border-color: #3a4c65 !important; }
+.talent-app .text-white,
+.talent-app .text-gray-100,
+.talent-app .text-slate-100 { color: var(--ts-text) !important; }
+.talent-app .text-slate-300,
+.talent-app .text-gray-300 { color: #c2cad7 !important; }
+.talent-app .text-slate-400,
+.talent-app .text-gray-400 { color: var(--ts-text-secondary) !important; }
+.talent-app .text-slate-500,
+.talent-app .text-gray-500 { color: var(--ts-text-muted) !important; }
+.talent-app .text-slate-600 { color: #718198 !important; }
+
+/* Keep blue for navigation, links and the single primary action—not decoration. */
+.talent-app .text-sky-300 { color: #8bc4e2 !important; }
+.talent-app .text-sky-400,
+.talent-app .text-cyan-400 { color: #62acd3 !important; }
+.talent-app .bg-sky-500 { background-color: #248fc7 !important; }
+.talent-app .bg-sky-600 { background-color: var(--ts-accent-strong) !important; }
+.talent-app .border-sky-500 { border-color: #3999c9 !important; }
+
+/* Calm controls and data-dense surfaces. */
+.talent-app button,
+.talent-app input,
+.talent-app select,
+.talent-app textarea { transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease; }
+.talent-app button:focus-visible,
+.talent-app input:focus-visible,
+.talent-app select:focus-visible,
+.talent-app textarea:focus-visible {
+  outline: 2px solid var(--ts-focus);
+  outline-offset: 2px;
+}
+.talent-app table { border-collapse: separate; border-spacing: 0; }
+.talent-app thead { background: rgba(6, 13, 24, 0.48); }
+.talent-app tbody tr { transition: background-color 140ms ease; }
+.talent-app tbody tr:hover { background-color: rgba(32, 50, 76, 0.5); }
+.talent-app h1,
+.talent-app h2,
+.talent-app h3 { letter-spacing: -0.025em; }
+
+@media (prefers-reduced-motion: reduce) {
+  .talent-app *, .talent-app *::before, .talent-app *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 .custom-scrollbar::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: rgba(51, 65, 85, 0.5);
+  background: rgba(24, 38, 59, 0.55);
   border-radius: 10px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(14, 165, 233, 0.6);
+  background: rgba(76, 112, 145, 0.72);
   border-radius: 10px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(14, 165, 233, 0.8);
+  background: rgba(83, 137, 176, 0.86);
 }
 
 @keyframes fadeIn {
