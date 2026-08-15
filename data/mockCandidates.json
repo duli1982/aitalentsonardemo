@@ -1,0 +1,362 @@
+[
+  {
+    "name": "Sarah Chen",
+    "email": "sarah.chen@email.com",
+    "skills": ["React", "TypeScript", "Node.js", "GraphQL", "AWS", "Docker", "MongoDB"],
+    "experienceYears": 6,
+    "summary": "Senior Full-Stack Engineer with 6+ years building scalable web applications. Expert in React ecosystem and cloud infrastructure. Led development of fintech platform serving 500K+ users.",
+    "fileName": "Sarah_Chen_Resume.pdf",
+    "location": "San Francisco, CA"
+  },
+  {
+    "name": "Marcus Johnson",
+    "email": "marcus.j@email.com",
+    "skills": ["Python", "Machine Learning", "TensorFlow", "PyTorch", "SQL", "Pandas", "Scikit-learn"],
+    "experienceYears": 4,
+    "summary": "Data Scientist specializing in ML model development and deployment. Experience with NLP and computer vision. Built recommendation engine increasing engagement by 35%.",
+    "fileName": "Marcus_Johnson_CV.pdf",
+    "location": "New York, NY"
+  },
+  {
+    "name": "Elena Rodriguez",
+    "email": "elena.rodriguez@email.com",
+    "skills": ["Product Management", "Agile", "Scrum", "JIRA", "Data Analysis", "User Research", "Roadmapping"],
+    "experienceYears": 7,
+    "summary": "Senior Product Manager with proven track record of launching successful B2B SaaS products. Managed cross-functional teams of 15+. Drove 3 products from concept to $10M+ ARR.",
+    "fileName": "Elena_Rodriguez_Resume.docx",
+    "location": "Austin, TX"
+  },
+  {
+    "name": "Rajesh Patel",
+    "email": "rajesh.patel@email.com",
+    "skills": ["DevOps", "Kubernetes", "Terraform", "Jenkins", "AWS", "Azure", "CI/CD", "Linux"],
+    "experienceYears": 8,
+    "summary": "DevOps Engineer with extensive cloud infrastructure experience. Implemented CI/CD pipelines reducing deployment time by 70%. Expert in containerization and infrastructure as code.",
+    "fileName": "Rajesh_Patel_CV.pdf",
+    "location": "Seattle, WA"
+  },
+  {
+    "name": "Jessica Williams",
+    "email": "jessica.williams@email.com",
+    "skills": ["UX Design", "Figma", "Adobe XD", "User Research", "Prototyping", "Design Systems", "HTML/CSS"],
+    "experienceYears": 5,
+    "summary": "UX/UI Designer focused on creating intuitive, accessible interfaces. Led redesign of enterprise dashboard improving user satisfaction by 45%. Strong collaboration with engineering teams.",
+    "fileName": "Jessica_Williams_Portfolio.pdf",
+    "location": "Los Angeles, CA"
+  },
+  {
+    "name": "Ahmed Hassan",
+    "email": "ahmed.hassan@email.com",
+    "skills": ["Java", "Spring Boot", "Microservices", "PostgreSQL", "Redis", "RabbitMQ", "REST APIs"],
+    "experienceYears": 9,
+    "summary": "Backend Engineer specializing in distributed systems and microservices architecture. Built payment processing system handling 1M+ daily transactions with 99.99% uptime.",
+    "fileName": "Ahmed_Hassan_CV.pdf",
+    "location": "Chicago, IL"
+  },
+  {
+    "name": "Olivia Anderson",
+    "email": "olivia.anderson@email.com",
+    "skills": ["Digital Marketing", "SEO", "Google Analytics", "Content Strategy", "Social Media", "A/B Testing"],
+    "experienceYears": 4,
+    "summary": "Digital Marketing Specialist with expertise in growth marketing and SEO. Increased organic traffic by 250% and conversion rates by 40% through data-driven campaigns.",
+    "fileName": "Olivia_Anderson_Resume.pdf",
+    "location": "Boston, MA"
+  },
+  {
+    "name": "David Kim",
+    "email": "david.kim@email.com",
+    "skills": ["Go", "Rust", "System Design", "Performance Optimization", "Distributed Systems", "gRPC"],
+    "experienceYears": 7,
+    "summary": "Systems Engineer passionate about low-latency, high-throughput systems. Optimized core services reducing p99 latency from 500ms to 50ms. Strong understanding of hardware-software interaction.",
+    "fileName": "David_Kim_CV.pdf",
+    "location": "San Jose, CA"
+  },
+  {
+    "name": "Sophia Martinez",
+    "email": "sophia.martinez@email.com",
+    "skills": ["Business Analysis", "SQL", "Tableau", "Power BI", "Excel", "Process Improvement", "Stakeholder Management"],
+    "experienceYears": 6,
+    "summary": "Business Analyst with strong technical and analytical skills. Identified process improvements saving $2M annually. Expert at translating business needs into technical requirements.",
+    "fileName": "Sophia_Martinez_CV.docx",
+    "location": "Denver, CO"
+  },
+  {
+    "name": "Michael O'Brien",
+    "email": "michael.obrien@email.com",
+    "skills": ["Cybersecurity", "Penetration Testing", "Security Auditing", "CISSP", "Network Security", "Incident Response"],
+    "experienceYears": 10,
+    "summary": "Information Security Specialist with CISSP certification. Led security audits for Fortune 500 companies. Implemented zero-trust architecture reducing security incidents by 60%.",
+    "fileName": "Michael_OBrien_CV.pdf",
+    "location": "Washington, DC"
+  },
+  {
+    "name": "Priya Sharma",
+    "email": "priya.sharma@email.com",
+    "skills": ["React Native", "iOS", "Swift", "Android", "Kotlin", "Mobile UI/UX", "Firebase"],
+    "experienceYears": 5,
+    "summary": "Mobile Developer skilled in cross-platform development. Built health & fitness app with 1M+ downloads. Strong focus on performance optimization and user experience.",
+    "fileName": "Priya_Sharma_Resume.pdf",
+    "location": "Bangalore, India (Remote)"
+  },
+  {
+    "name": "James Wilson",
+    "email": "james.wilson@email.com",
+    "skills": ["Sales", "Account Management", "CRM", "Salesforce", "Negotiation", "B2B Sales", "SaaS"],
+    "experienceYears": 8,
+    "summary": "Enterprise Sales Executive with consistent record of exceeding quotas. Closed $15M+ in annual deals. Built relationships with C-level executives at Fortune 1000 companies.",
+    "fileName": "James_Wilson_Resume.pdf",
+    "location": "Atlanta, GA"
+  },
+  {
+    "name": "Lisa Zhang",
+    "email": "lisa.zhang@email.com",
+    "skills": ["QA Automation", "Selenium", "Jest", "Cypress", "Test Strategy", "CI/CD Testing", "Python"],
+    "experienceYears": 5,
+    "summary": "QA Engineer specializing in test automation frameworks. Implemented automated testing suite reducing manual QA effort by 80%. Strong advocate for quality throughout SDLC.",
+    "fileName": "Lisa_Zhang_CV.pdf",
+    "location": "Toronto, Canada"
+  },
+  {
+    "name": "Carlos Mendez",
+    "email": "carlos.mendez@email.com",
+    "skills": ["Project Management", "PMP", "Agile", "Scrum Master", "Risk Management", "Budget Planning", "Stakeholder Communication"],
+    "experienceYears": 12,
+    "summary": "Senior Project Manager with PMP certification. Delivered 50+ projects on time and under budget. Expert in managing distributed teams and complex technical initiatives.",
+    "fileName": "Carlos_Mendez_Resume.docx",
+    "location": "Miami, FL"
+  },
+  {
+    "name": "Emma Thompson",
+    "email": "emma.thompson@email.com",
+    "skills": ["HR", "Talent Acquisition", "Employee Relations", "HRIS", "Compensation", "Performance Management"],
+    "experienceYears": 7,
+    "summary": "Human Resources Manager with expertise in talent strategy and organizational development. Reduced turnover by 30% and improved employee satisfaction scores by 25%.",
+    "fileName": "Emma_Thompson_CV.pdf",
+    "location": "Portland, OR"
+  },
+  {
+    "name": "Kevin Nguyen",
+    "email": "kevin.nguyen@email.com",
+    "skills": ["Vue.js", "Nuxt.js", "JavaScript", "Sass", "Webpack", "Frontend Architecture", "Performance"],
+    "experienceYears": 4,
+    "summary": "Frontend Developer with expertise in Vue ecosystem. Built component library used across 10+ products. Passionate about web performance and accessibility standards.",
+    "fileName": "Kevin_Nguyen_Resume.pdf",
+    "location": "San Diego, CA"
+  },
+  {
+    "name": "Fatima Al-Rashid",
+    "email": "fatima.alrashid@email.com",
+    "skills": ["Data Engineering", "Apache Spark", "Airflow", "Python", "BigQuery", "ETL", "Data Warehousing"],
+    "experienceYears": 6,
+    "summary": "Data Engineer building scalable data pipelines processing 100TB+ daily. Designed data warehouse architecture supporting real-time analytics for 10M+ users.",
+    "fileName": "Fatima_AlRashid_CV.pdf",
+    "location": "Dubai, UAE (Remote)"
+  },
+  {
+    "name": "Thomas Anderson",
+    "email": "thomas.anderson@email.com",
+    "skills": ["C++", "Computer Graphics", "OpenGL", "Vulkan", "Game Development", "3D Math", "Optimization"],
+    "experienceYears": 8,
+    "summary": "Graphics Engineer with experience in game development and rendering engines. Optimized rendering pipeline achieving 60 FPS on mobile devices. Published papers on real-time rendering.",
+    "fileName": "Thomas_Anderson_CV.pdf",
+    "location": "London, UK"
+  },
+  {
+    "name": "Nina Kowalski",
+    "email": "nina.kowalski@email.com",
+    "skills": ["Content Writing", "Technical Writing", "Documentation", "SEO Writing", "Copywriting", "Editorial"],
+    "experienceYears": 5,
+    "summary": "Technical Writer creating clear, user-friendly documentation. Developed documentation strategy for API platform serving 50K+ developers. Strong technical understanding and communication skills.",
+    "fileName": "Nina_Kowalski_Resume.pdf",
+    "location": "Berlin, Germany"
+  },
+  {
+    "name": "Ryan Chen",
+    "email": "ryan.chen@email.com",
+    "skills": ["Blockchain", "Solidity", "Web3", "Smart Contracts", "Ethereum", "DeFi", "Cryptography"],
+    "experienceYears": 3,
+    "summary": "Blockchain Developer specializing in smart contract development and DeFi protocols. Audited contracts securing $100M+ in TVL. Active contributor to open-source Web3 projects.",
+    "fileName": "Ryan_Chen_CV.pdf",
+    "location": "Singapore"
+  },
+  {
+    "name": "Jennifer Morrison",
+    "email": "jennifer.morrison@email.com",
+    "skills": ["Talent Acquisition", "Sourcing", "Boolean Search", "LinkedIn Recruiter", "ATS", "Bullhorn", "Candidate Screening"],
+    "experienceYears": 5,
+    "summary": "Sourcing Recruiter with proven track record in identifying and engaging top talent. Filled 200+ positions across IT, finance, and healthcare sectors. Expert in passive candidate sourcing and building talent pipelines.",
+    "fileName": "Jennifer_Morrison_Resume.pdf",
+    "location": "Dallas, TX"
+  },
+  {
+    "name": "Daniel Foster",
+    "email": "daniel.foster@email.com",
+    "skills": ["Recruitment Coordination", "Scheduling", "ATS Management", "Candidate Communication", "Interview Coordination", "Onboarding Support"],
+    "experienceYears": 3,
+    "summary": "Recruitment Coordinator skilled in managing end-to-end recruitment processes. Coordinated 500+ interviews annually with 95% satisfaction rate. Strong organizational and multitasking abilities.",
+    "fileName": "Daniel_Foster_CV.pdf",
+    "location": "Phoenix, AZ"
+  },
+  {
+    "name": "Rachel Goldman",
+    "email": "rachel.goldman@email.com",
+    "skills": ["Technical Recruiting", "IT Staffing", "Vendor Management", "Client Relations", "Contract Negotiations", "MSP Programs"],
+    "experienceYears": 7,
+    "summary": "Senior Technical Recruiter specializing in IT and engineering roles. Managed $5M+ in annual placements. Built strategic partnerships with Fortune 500 clients in technology sector.",
+    "fileName": "Rachel_Goldman_Resume.pdf",
+    "location": "Charlotte, NC"
+  },
+  {
+    "name": "Marcus Thompson",
+    "email": "marcus.thompson@email.com",
+    "skills": ["Team Leadership", "Recruitment Strategy", "Performance Management", "Training & Development", "KPI Tracking", "Workforce Planning"],
+    "experienceYears": 9,
+    "summary": "Recruitment Team Lead managing team of 12 recruiters. Consistently exceeded quarterly targets by 25%. Implemented training programs improving team productivity by 40%.",
+    "fileName": "Marcus_Thompson_CV.pdf",
+    "location": "Houston, TX"
+  },
+  {
+    "name": "Amanda Chen",
+    "email": "amanda.chen@email.com",
+    "skills": ["Administrative Support", "Office Management", "Microsoft Office Suite", "Data Entry", "Calendar Management", "Document Processing"],
+    "experienceYears": 4,
+    "summary": "Administrative Professional with exceptional organizational skills. Supported executive team of 8 leaders. Streamlined office processes reducing administrative overhead by 30%.",
+    "fileName": "Amanda_Chen_Resume.docx",
+    "location": "Minneapolis, MN"
+  },
+  {
+    "name": "Brian Mitchell",
+    "email": "brian.mitchell@email.com",
+    "skills": ["Healthcare Recruiting", "Nursing Staffing", "Credentialing", "Compliance", "VMS Systems", "High-Volume Recruiting"],
+    "experienceYears": 6,
+    "summary": "Healthcare Recruiter specializing in nursing and allied health placements. Filled 300+ healthcare positions annually. Expert in credentialing and regulatory compliance.",
+    "fileName": "Brian_Mitchell_CV.pdf",
+    "location": "Nashville, TN"
+  },
+  {
+    "name": "Samantha Brooks",
+    "email": "samantha.brooks@email.com",
+    "skills": ["Account Management", "Client Success", "Business Development", "Workforce Solutions", "Relationship Management", "Contract Management"],
+    "experienceYears": 8,
+    "summary": "Account Manager driving client growth and retention. Managed portfolio of 25+ enterprise accounts generating $10M+ revenue. Achieved 98% client retention rate.",
+    "fileName": "Samantha_Brooks_Resume.pdf",
+    "location": "Columbus, OH"
+  },
+  {
+    "name": "Jose Rodriguez",
+    "email": "jose.rodriguez@email.com",
+    "skills": ["Payroll Administration", "HRIS", "ADP Workforce Now", "Benefits Administration", "Time & Attendance", "Compliance"],
+    "experienceYears": 5,
+    "summary": "Payroll Coordinator managing multi-state payroll for 2,000+ employees. Ensured 100% accuracy and compliance. Implemented automated systems reducing processing time by 50%.",
+    "fileName": "Jose_Rodriguez_CV.pdf",
+    "location": "San Antonio, TX"
+  },
+  {
+    "name": "Laura Bennett",
+    "email": "laura.bennett@email.com",
+    "skills": ["Operations Management", "Process Improvement", "Project Coordination", "Vendor Management", "Quality Assurance", "Reporting & Analytics"],
+    "experienceYears": 7,
+    "summary": "Operations Coordinator optimizing recruitment operations. Implemented process improvements increasing efficiency by 35%. Strong analytical skills and attention to detail.",
+    "fileName": "Laura_Bennett_Resume.pdf",
+    "location": "Indianapolis, IN"
+  },
+  {
+    "name": "Kevin Park",
+    "email": "kevin.park@email.com",
+    "skills": ["Executive Search", "C-Suite Recruiting", "Executive Sourcing", "Talent Mapping", "Compensation Analysis", "Confidential Search"],
+    "experienceYears": 10,
+    "summary": "Executive Recruiter specializing in C-level and senior leadership placements. Completed 50+ executive searches across multiple industries. Strong network of executive-level contacts.",
+    "fileName": "Kevin_Park_CV.pdf",
+    "location": "San Francisco, CA"
+  },
+  {
+    "name": "Michelle Davis",
+    "email": "michelle.davis@email.com",
+    "skills": ["Customer Service", "Data Management", "CRM Systems", "Problem Solving", "Communication", "Multi-tasking"],
+    "experienceYears": 3,
+    "summary": "Customer Service Coordinator with excellent communication skills. Managed inquiries from 100+ clients daily. Maintained 96% customer satisfaction rating.",
+    "fileName": "Michelle_Davis_Resume.docx",
+    "location": "Jacksonville, FL"
+  },
+  {
+    "name": "Robert Turner",
+    "email": "robert.turner@email.com",
+    "skills": ["Branch Management", "P&L Management", "Business Development", "Staff Leadership", "Sales Strategy", "Market Expansion"],
+    "experienceYears": 12,
+    "summary": "Branch Manager with proven success growing regional operations. Increased branch revenue by 150% over 3 years. Led team of 20+ recruiting professionals.",
+    "fileName": "Robert_Turner_CV.pdf",
+    "location": "Detroit, MI"
+  },
+  {
+    "name": "Angela Martinez",
+    "email": "angela.martinez@email.com",
+    "skills": ["Onboarding Coordination", "New Hire Orientation", "I-9 Verification", "Background Checks", "Employee Engagement", "HRIS Data Entry"],
+    "experienceYears": 4,
+    "summary": "Onboarding Specialist creating exceptional new hire experiences. Onboarded 500+ employees annually. Improved new hire retention by 25% through enhanced onboarding programs.",
+    "fileName": "Angela_Martinez_Resume.pdf",
+    "location": "Tampa, FL"
+  },
+  {
+    "name": "Christopher Lee",
+    "email": "christopher.lee@email.com",
+    "skills": ["Finance Recruiting", "Banking Staffing", "Accounting Placement", "Candidate Assessment", "Market Research", "Salary Benchmarking"],
+    "experienceYears": 6,
+    "summary": "Financial Services Recruiter with expertise in banking and accounting placements. Built strong relationships with top accounting firms. Consistently exceeded placement targets by 30%.",
+    "fileName": "Christopher_Lee_CV.pdf",
+    "location": "New York, NY"
+  },
+  {
+    "name": "Nicole Anderson",
+    "email": "nicole.anderson@email.com",
+    "skills": ["Training Coordination", "Learning & Development", "Workshop Facilitation", "Content Creation", "LMS Administration", "Training Metrics"],
+    "experienceYears": 5,
+    "summary": "Training Coordinator developing and delivering recruitment training programs. Trained 200+ new recruiters. Created onboarding curriculum reducing ramp-up time by 40%.",
+    "fileName": "Nicole_Anderson_Resume.pdf",
+    "location": "Seattle, WA"
+  },
+  {
+    "name": "Gregory Harris",
+    "email": "gregory.harris@email.com",
+    "skills": ["Diversity Recruiting", "Campus Recruitment", "Employer Branding", "Social Media Recruiting", "Recruitment Marketing", "Event Planning"],
+    "experienceYears": 5,
+    "summary": "Diversity & Campus Recruiter building inclusive talent pipelines. Managed relationships with 30+ universities. Increased diversity hiring by 45% through targeted initiatives.",
+    "fileName": "Gregory_Harris_CV.pdf",
+    "location": "Austin, TX"
+  },
+  {
+    "name": "Patricia Wilson",
+    "email": "patricia.wilson@email.com",
+    "skills": ["HR Generalist", "Employee Relations", "Policy Development", "Conflict Resolution", "HR Compliance", "Performance Reviews"],
+    "experienceYears": 8,
+    "summary": "HR Generalist supporting 500+ employee organization. Resolved complex employee relations issues. Developed HR policies ensuring legal compliance and best practices.",
+    "fileName": "Patricia_Wilson_Resume.pdf",
+    "location": "Denver, CO"
+  },
+  {
+    "name": "Steven Clark",
+    "email": "steven.clark@email.com",
+    "skills": ["Light Industrial Recruiting", "Manufacturing Staffing", "Warehouse Placement", "Safety Compliance", "High-Volume Hiring", "Shift Scheduling"],
+    "experienceYears": 4,
+    "summary": "Industrial Recruiter specializing in manufacturing and warehouse staffing. Filled 400+ positions annually. Expert in safety compliance and shift-based workforce planning.",
+    "fileName": "Steven_Clark_CV.pdf",
+    "location": "Milwaukee, WI"
+  },
+  {
+    "name": "Jessica Taylor",
+    "email": "jessica.taylor@email.com",
+    "skills": ["Recruiting Analytics", "Reporting & Dashboards", "Data Analysis", "Tableau", "Excel", "Metrics Tracking", "Process Optimization"],
+    "experienceYears": 6,
+    "summary": "Recruitment Analyst transforming data into actionable insights. Built automated reporting dashboards reducing manual reporting by 70%. Identified trends improving hiring efficiency by 25%.",
+    "fileName": "Jessica_Taylor_Resume.pdf",
+    "location": "Raleigh, NC"
+  },
+  {
+    "name": "Anthony Roberts",
+    "email": "anthony.roberts@email.com",
+    "skills": ["Sales Leadership", "Team Management", "Revenue Growth", "Client Acquisition", "Strategic Planning", "Coaching & Mentoring"],
+    "experienceYears": 11,
+    "summary": "Sales Team Leader driving recruitment sales growth. Managed team of 15 account managers generating $20M+ annual revenue. Developed top performers through coaching and mentorship programs.",
+    "fileName": "Anthony_Roberts_CV.pdf",
+    "location": "Chicago, IL"
+  }
+]

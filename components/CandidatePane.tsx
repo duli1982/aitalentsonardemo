@@ -1,0 +1,1175 @@
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import type { Candidate, EvidencePack, Job, RoleContextPack } from '../types';
+import SkillsPassport from './SkillsPassport';
+import { Users, UserCheck, UploadCloud, Loader2, Diamond, TrendingUp, MessageSquare, Briefcase, ThumbsUp, ThumbsDown, Sparkles, Zap, Trophy, ArrowRight, Microscope, Building2, Clock, Globe, FileText, CheckCircle, Search, Mail, Phone, MapPin, Calendar, Download, ExternalLink, ChevronDown, ChevronUp, Play, Award, X, Database, RefreshCw, Filter, GraduationCap, Star, PlusCircle, Fingerprint, Shield, Info, AlertTriangle, UserPlus, ListChecks, CalendarDays } from 'lucide-react';
+import { useData } from '../contexts/DataContext';
+import { useCandidateJobDrawer } from '../contexts/CandidateJobDrawerContext';
+import { useLocalWorkspaceCandidates } from '../hooks/useLocalWorkspaceCandidates';
+import { decisionArtifactService } from '../services/DecisionArtifactService';
+import { pipelineEventService } from '../services/PipelineEventService';
+import { fitAnalysisService } from '../services/FitAnalysisService';
+import { evidencePackService } from '../services/EvidencePackService';
+import { jobContextPackService } from '../services/JobContextPackService';
+import RecordAssessmentModal from './modals/RecordAssessmentModal';
+import { toCandidateSnapshot, toJobSnapshot } from '../utils/snapshots';
+import type { DecisionValue } from '../services/DecisionArtifactService';
+import { TIMING } from '../config/timing';
+
+interface CandidatePaneProps {
+  job: Job | null;
+  onInitiateAnalysis: (type: string, candidate: Candidate) => void;
+  onFeedback: (candidateId: string, jobId: string, feedback: 'positive' | 'negative') => void;
+  onAddToPipeline: (candidate: Candidate, jobId: string) => void;
+  onBatchAnalysis?: (candidates: Candidate[]) => void;
+  onViewProfile?: (candidate: Candidate) => void;
+  onOpenCandidate360?: (candidate: Candidate) => void;
+  isLoading: boolean;
+  loadingCandidateId: string | null;
+  isBatchAnalyzing?: boolean;
+}
+
+/**
+ * Build candidate subtitle from graph data
+ */
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : null;
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((item) => String(item)) : [];
+}
+
+type GraphCandidateSource = {
+  companies?: string[];
+  schools?: string[];
+};
+
+function buildCandidateSubtitle(candidate: GraphCandidateSource): string {
+  const parts: string[] = [];
+
+  if (candidate.companies && candidate.companies.length > 0) {
+    parts.push(candidate.companies[0]);
+  }
+
+  if (candidate.schools && candidate.schools.length > 0) {
+    parts.push(candidate.schools[0]);
+  }
+
+  if (parts.length === 0) {
+    return 'Local workspace';
+  }
+
+  return parts.join(' • ');
+}
+
+type CandidateSource = 'all' | 'localStore' | 'internal' | 'past' | 'uploaded';
+
+const SourceChip: React.FC<{
+  label: string;
+  count: number;
+  isActive: boolean;
+  onClick: () => void;
+}> = ({ label, count, isActive, onClick }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors
+      ${isActive ? 'bg-sky-500/15 text-sky-300 border-sky-500/30' : 'bg-slate-900/40 text-slate-300 border-slate-700 hover:border-slate-600 hover:text-white'}`}
+  >
+    <span>{label}</span>
+    <span className={`px-2 py-0.5 rounded-full text-[10px] ${isActive ? 'bg-sky-500 text-slate-900' : 'bg-slate-700 text-slate-200'}`}>
+      {count}
+    </span>
+  </button>
+);
+
+const CandidateCard: React.FC<{
+  candidate: Candidate;
+  job: Job;
+  evidencePack?: EvidencePack;
+  onSelect?: (candidate: Candidate) => void;
+  onInitiateAnalysis: (type: string, candidate: Candidate) => void;
+  onFeedback: (candidateId: string, jobId: string, feedback: 'positive' | 'negative') => void;
+  onAddToPipeline: (candidate: Candidate, jobId: string) => void;
+  onViewProfile?: (candidate: Candidate) => void;
+  onOpenCandidate360?: (candidate: Candidate) => void;
+  onRecordAssessment?: (candidate: Candidate) => void;
+  isLoading: boolean;
+  loadingCandidateId: string | null;
+}> = ({ candidate, job, evidencePack, onSelect, onInitiateAnalysis, onFeedback, onAddToPipeline, onViewProfile, onOpenCandidate360, onRecordAssessment, isLoading, loadingCandidateId }) => {
+  const isCurrentCardLoading = isLoading && loadingCandidateId === candidate.id;
+  const matchScore = candidate.matchScores?.[job.id];
+  const matchRationale = candidate.matchRationales?.[job.id];
+  const feedback = candidate.feedback?.[job.id] ?? 'none';
+  const isInPipeline = Boolean(candidate.pipelineStage?.[job.id]);
+  const [skillsPassportSkill, setSkillsPassportSkill] = useState<string | null>(null);
+
+  // Extract company and school data
+  const getCompanySchoolData = () => {
+    const companies: string[] = [];
+    const schools: string[] = [];
+
+    // Try to get from metadata first (for LocalWorkspace candidates)
+    const metadata = asRecord(candidate.metadata);
+    const metadataCompanies = asStringArray(metadata?.companies);
+    const metadataSchools = asStringArray(metadata?.schools);
+    if (metadataCompanies.length) {
+      companies.push(...metadataCompanies);
+    }
+    if (metadataSchools.length) {
+      schools.push(...metadataSchools);
+    }
+
+    // Fallback: parse from fileName subtitle
+    if (companies.length === 0 && schools.length === 0 && candidate.fileName && candidate.fileName !== 'Local workspace') {
+      const parts = candidate.fileName.split(' • ');
+      if (parts.length > 0) companies.push(parts[0]);
+      if (parts.length > 1) schools.push(parts[1]);
+    }
+
+    return { companies, schools };
+  };
+
+  const { companies, schools } = getCompanySchoolData();
+  const experienceYears = candidate.experienceYears ?? 0;
+  const location = candidate.location || '';
+
+  // Get match quality badge
+  const getMatchQuality = () => {
+    if (typeof matchScore !== 'number') return null;
+    if (matchScore >= 80) return { text: 'Excellent', color: 'bg-green-500/20 text-green-300 border-green-500/30', icon: '⭐' };
+    if (matchScore >= 60) return { text: 'Good', color: 'bg-blue-500/20 text-blue-300 border-blue-500/30', icon: '✓' };
+    if (matchScore >= 40) return { text: 'Moderate', color: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30', icon: '○' };
+    return { text: 'Fair', color: 'bg-slate-500/20 text-slate-300 border-slate-500/30', icon: '·' };
+  };
+
+  const matchQuality = getMatchQuality();
+
+  // Check if skill matches job requirements
+  const isMatchingSkill = (skill: string) => {
+    const jobSkills = [...(job.requiredSkills || []), ...(job.niceToHaveSkills || [])];
+    return jobSkills.some(jobSkill =>
+      jobSkill.toLowerCase().includes(skill.toLowerCase()) ||
+      skill.toLowerCase().includes(jobSkill.toLowerCase())
+    );
+  };
+
+  return (
+    <div
+      onClick={() => (onSelect ? onSelect(candidate) : onViewProfile?.(candidate))}
+      className="bg-slate-800 shadow-lg rounded-xl p-4 flex flex-col justify-between transition-all duration-300 hover:shadow-sky-500/20 hover:ring-2 hover:ring-sky-500/30 cursor-pointer relative group"
+    >
+      <div>
+        {/* Header with name and quick info */}
+        <div className="flex justify-between items-start mb-3">
+          <div className="flex-1">
+            <h3 className="text-lg font-semibold text-sky-400 group-hover:text-sky-300 transition-colors mb-1">
+              {candidate.name}
+            </h3>
+            <div className="flex items-center gap-3 text-xs text-gray-400">
+              {experienceYears > 0 && (
+                <span className="flex items-center gap-1">
+                  <Briefcase className="h-3 w-3" />
+                  {experienceYears} yrs
+                </span>
+              )}
+              {location && (
+                <span className="flex items-center gap-1">
+                  <MapPin className="h-3 w-3" />
+                  {location}
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center space-x-1 opacity-50 group-hover:opacity-100 transition-opacity">
+            <button onClick={(e) => { e.stopPropagation(); onFeedback(candidate.id, job.id, 'positive'); }} className={`p-1.5 rounded-full transition-colors ${feedback === 'positive' ? 'bg-green-500/30 text-green-300' : 'text-gray-400 hover:text-green-400 hover:bg-slate-700'}`} aria-label="Good match"><ThumbsUp size={14} /></button>
+            <button onClick={(e) => { e.stopPropagation(); onFeedback(candidate.id, job.id, 'negative'); }} className={`p-1.5 rounded-full transition-colors ${feedback === 'negative' ? 'bg-red-500/30 text-red-300' : 'text-gray-400 hover:text-red-400 hover:bg-slate-700'}`} aria-label="Bad match"><ThumbsDown size={14} /></button>
+          </div>
+        </div>
+
+        {/* Company and School Badges */}
+        {(companies.length > 0 || schools.length > 0) && (
+          <div className="mb-3 flex flex-wrap gap-2">
+            {companies.slice(0, 2).map((company, idx) => (
+              <span key={idx} className="inline-flex items-center gap-1 bg-purple-500/10 text-purple-300 text-[10px] px-2 py-1 rounded-full border border-purple-500/20">
+                <Building2 className="h-3 w-3" />
+                {company}
+              </span>
+            ))}
+            {schools.slice(0, 1).map((school, idx) => (
+              <span key={idx} className="inline-flex items-center gap-1 bg-sky-500/10 text-sky-300 text-[10px] px-2 py-1 rounded-full border border-sky-500/20">
+                <GraduationCap className="h-3 w-3" />
+                {school}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Match Score with Quality Badge */}
+        <div className="mb-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {typeof matchScore === 'number' ? (
+              <>
+                <div className={`text-2xl font-bold ${matchScore > 75 ? 'text-green-400' : matchScore > 50 ? 'text-yellow-400' : 'text-orange-400'}`}>
+                  {matchScore}%
+                </div>
+                {matchQuality && (
+                  <span className={`inline-flex items-center text-[10px] px-2 py-0.5 rounded-full border ${matchQuality.color}`}>
+                    {matchQuality.text}
+                  </span>
+                )}
+              </>
+            ) : (
+              <span className="text-sm text-slate-500 italic">Analysis Pending</span>
+            )}
+          </div>
+          {candidate.isHiddenGem && (
+            <span className="inline-flex items-center bg-amber-500/10 text-amber-300 text-[10px] px-2 py-0.5 rounded-full border border-amber-500/20">
+              <Diamond className="h-3 w-3 mr-1" /> Hidden Gem
+            </span>
+          )}
+        </div>
+
+        {/* Evidence-first summary (optional; falls back to rationale) */}
+        {evidencePack ? (
+          <div className="mb-4 rounded-lg border border-slate-700 bg-slate-900/30 p-3 space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-700/50 pb-2">
+              <div className="text-xs font-semibold text-slate-200 flex items-center gap-2">
+                <Microscope size={14} className="text-sky-400" />
+                Evidence & Risk
+              </div>
+              <div className="text-[11px] text-slate-400">
+                Confidence: <span className={evidencePack.confidence > 0.7 ? 'text-green-400' : evidencePack.confidence > 0.4 ? 'text-yellow-400' : 'text-red-400'}>{Math.round((evidencePack.confidence ?? 0) * 100)}%</span>
+              </div>
+            </div>
+
+            {/* Match Reasons */}
+            <div className="space-y-1.5">
+              {evidencePack.matchReasons?.slice(0, 3).map((r, idx) => (
+                <div key={`${r.title}-${idx}`} className="text-[11px] text-slate-300 bg-slate-800/50 p-2 rounded border border-slate-700/50">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <CheckCircle size={10} className="text-emerald-500/70" />
+                    <span className="font-medium text-emerald-100">{r.title}</span>
+                  </div>
+                  <div className="pl-4.5 text-slate-400 leading-tight">
+                    {r.claim}
+                    {r.snippet?.text && <span className="text-slate-500 italic block mt-0.5 border-l-2 border-slate-600 pl-1.5 ml-0.5">“{r.snippet.text}”</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Conspicuous Omissions (North Star) */}
+            {evidencePack.conspicuousOmissions && evidencePack.conspicuousOmissions.length > 0 && (
+              <div className="bg-amber-950/20 border border-amber-900/30 rounded p-2">
+                <div className="text-[11px] font-semibold text-amber-500 mb-1 flex items-center gap-1.5">
+                  <Fingerprint size={12} />
+                  Conspicuous Omissions
+                </div>
+                {evidencePack.conspicuousOmissions.map((o, idx) => (
+                  <div key={idx} className="text-[11px] text-amber-200/80 pl-4 relative">
+                    <span className="absolute left-1 top-1.5 w-1 h-1 bg-amber-500/50 rounded-full"></span>
+                    <span className="font-medium text-amber-200">{o.topic}:</span> {o.reason}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Risk & Mitigation */}
+            <div className="text-[11px] bg-slate-800/30 p-2 rounded border border-slate-700/50">
+              <div className="text-slate-400 mb-0.5 text-[10px] uppercase tracking-wider font-semibold">Primary Risk</div>
+              <div className="text-amber-200 mb-1">
+                {evidencePack.risk?.statement}
+              </div>
+              <div className="text-slate-400 flex items-start gap-1.5 border-t border-slate-700/50 pt-1 mt-1">
+                <Shield size={10} className="mt-0.5 text-slate-500" />
+                <span>{evidencePack.risk?.mitigation}</span>
+              </div>
+            </div>
+
+            {/* PRE-MORTEM (Regret Reduction) */}
+            {evidencePack.preMortemAnalysis && evidencePack.preMortemAnalysis.length > 0 && (
+              <div className="bg-red-950/20 border border-red-900/30 p-2 rounded relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-1 opacity-10 group-hover:opacity-30 transition-opacity">
+                  <AlertTriangle size={32} className="text-red-500" />
+                </div>
+                <div className="text-[11px] font-semibold text-red-400 mb-1 flex items-center gap-1.5 relative z-10">
+                  <AlertTriangle size={12} />
+                  Pre-Mortem (Potential Failure Modes)
+                </div>
+                <div className="space-y-1.5 relative z-10">
+                  {evidencePack.preMortemAnalysis.map((pm, idx) => (
+                    <div key={idx} className="text-[10px] leading-tight">
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="text-red-200 font-medium font-mono">{pm.failureMode}</span>
+                        <span className={`px-1.5 rounded-full text-[9px] border ${pm.probability === 'High' ? 'bg-red-500/20 text-red-300 border-red-500/40' : 'bg-orange-500/20 text-orange-300 border-orange-500/40'}`}>{pm.probability} Prob.</span>
+                      </div>
+                      <div className="text-slate-400 pl-2 border-l border-red-900/40">
+                        Prevention: <span className="text-slate-300">{pm.prevention}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Reference Check Guide (Phase 3) */}
+            {evidencePack.referenceCheckGuide && evidencePack.referenceCheckGuide.length > 0 && (
+              <div className="bg-blue-950/20 border border-blue-900/30 p-2 rounded">
+                <div className="text-[11px] font-semibold text-blue-400 mb-1 flex items-center gap-1.5">
+                  <ListChecks size={12} />
+                  Precision Reference Checks
+                </div>
+                <div className="space-y-1.5">
+                  {evidencePack.referenceCheckGuide.map((ref, idx) => (
+                    <div key={idx} className="bg-slate-900/40 p-1.5 rounded border border-slate-700/50">
+                      <div className="text-[10px] text-blue-100 font-medium mb-0.5">"{ref.question}"</div>
+                      <div className="text-[9px] text-slate-500 flex items-start gap-1">
+                        <Info size={8} className="mt-0.5 shrink-0" />
+                        <span>Context: {ref.context}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* High-Stakes Questions (North Star) */}
+            {evidencePack.highStakesQuestions && evidencePack.highStakesQuestions.length > 0 ? (
+              <div className="space-y-2 pt-1">
+                <div className="text-[11px] font-semibold text-purple-400 flex items-center gap-1.5">
+                  <Zap size={12} />
+                  High-Stakes Discovery Questions
+                </div>
+                {evidencePack.highStakesQuestions.map((q, idx) => (
+                  <div key={idx} className="group cursor-help relative p-2 bg-purple-900/10 hover:bg-purple-900/20 border border-purple-500/20 rounded transition-colors">
+                    <div className="text-[11px] text-purple-100 font-medium mb-1">
+                      "{q.question}"
+                    </div>
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span className="text-purple-300/70 uppercase tracking-wider">{q.riskArea}</span>
+                      <span className="opacity-0 group-hover:opacity-100 transition-opacity text-purple-300">Hover for signal</span>
+                    </div>
+
+                    {/* Hover Tooltip for Signal */}
+                    <div className="absolute left-0 bottom-full mb-2 w-full p-2 bg-slate-900 border border-slate-600 rounded shadow-xl text-[10px] text-slate-300 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 pointer-events-none">
+                      <span className="font-semibold text-emerald-400 block mb-0.5">Expected Signal:</span>
+                      {q.expectedSignal}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              /* Fallback to old questions if new ones aren't generated yet */
+              <div className="space-y-1 border-t border-slate-700/50 pt-2">
+                <div className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Truth-Check Preview</div>
+                {evidencePack.truthCheckPreviewQuestions?.slice(0, 2).map((q, idx) => (
+                  <div key={`${idx}-${q}`} className="text-[11px] text-slate-400 pl-3 border-l sm:border-l-2 border-slate-700">
+                    {q}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Day 90 Trajectory (Phase 3) */}
+            {evidencePack.day90Trajectory && evidencePack.day90Trajectory.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-slate-700/50">
+                <div className="text-[11px] font-semibold text-emerald-400 mb-2 flex items-center gap-1.5">
+                  <CalendarDays size={12} />
+                  Day 90 Forecast (Regret Prevention)
+                </div>
+                <div className="relative pl-3 space-y-4 before:absolute before:left-[5px] before:top-1 before:bottom-1 before:w-px before:bg-slate-700">
+                  {evidencePack.day90Trajectory.map((step, idx) => (
+                    <div key={idx} className="relative">
+                      <div className={`absolute -left-[16px] top-1.5 w-2 h-2 rounded-full border border-slate-900 ${idx === 0 ? 'bg-emerald-500' : idx === 1 ? 'bg-emerald-400/70' : 'bg-emerald-300/50'
+                        }`}></div>
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="text-[10px] font-bold text-slate-200 uppercase tracking-wider">{step.period}</span>
+                      </div>
+                      <div className="text-[10px] text-emerald-100/90 mb-0.5 font-medium">{step.focus}</div>
+                      <div className="text-[9px] text-amber-400/80 flex items-center gap-1">
+                        <AlertTriangle size={8} /> Risk: {step.potentialRisk}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+          </div>
+        ) : (
+          <p className="text-xs text-gray-400 mb-4 min-h-[2.5rem] leading-relaxed">
+            {matchRationale || 'No analysis data available. Run detailed analysis to inspect fit.'}
+          </p>
+        )}
+
+        {/* Skills with highlighting */}
+        <div className="mb-4">
+          <div className="flex flex-wrap gap-1.5">
+            {candidate.skills.slice(0, 5).map(skill => {
+              const isMatch = isMatchingSkill(skill);
+              return (
+                <button
+                  key={skill}
+                  onClick={(e) => { e.stopPropagation(); setSkillsPassportSkill(skill); }}
+                  className={`text-[10px] px-2 py-1 rounded border transition-all hover:scale-105 hover:shadow-lg ${isMatch
+                    ? 'bg-green-500/20 border-green-500/40 text-green-300 hover:bg-green-500/30'
+                    : 'bg-slate-700/50 border-slate-600/50 text-gray-300 hover:bg-slate-700/80 hover:text-white'
+                    }`}
+                  title="Click to view Skills Passport (Evidence Chain)"
+                >
+                  {skill}
+                </button>
+              );
+            })}
+            {candidate.skills.length > 5 && (
+              <span className="text-gray-500 text-[10px] px-2 py-1">
+                +{candidate.skills.length - 5} more
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {
+        skillsPassportSkill && (
+          <div className="absolute z-50 left-0 top-0 w-full h-full bg-slate-900/95 p-4 flex flex-col justify-center shadow-2xl rounded-xl">
+            <SkillsPassport skillName={skillsPassportSkill} onClose={() => setSkillsPassportSkill(null)} />
+          </div>
+        )
+      }
+
+      {/* Action Buttons */}
+      <div className="mt-auto grid grid-cols-6 gap-2">
+        <button
+          onClick={(e) => { e.stopPropagation(); onInitiateAnalysis('FIT_ANALYSIS', candidate); }}
+          disabled={isCurrentCardLoading}
+          className="col-span-2 bg-gradient-to-r from-sky-600 to-sky-700 hover:from-sky-500 hover:to-sky-600 text-white font-medium py-2 px-3 rounded-lg flex items-center justify-center transition-all text-xs disabled:opacity-50 shadow-lg shadow-sky-900/30"
+        >
+          {isCurrentCardLoading ? (
+            <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+          ) : (
+            <TrendingUp className="h-3 w-3 mr-1.5" />
+          )}
+          {typeof matchScore === 'number' ? 'Details' : 'Analyze'}
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onAddToPipeline(candidate, job.id); }}
+          disabled={isCurrentCardLoading || isInPipeline}
+          className="bg-slate-700 hover:bg-slate-600 text-gray-300 hover:text-white border border-slate-600 rounded-lg flex items-center justify-center transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          title={isInPipeline ? 'Already in pipeline' : 'Add to pipeline'}
+        >
+          <PlusCircle className="h-4 w-4" />
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onInitiateAnalysis('OUTREACH', candidate); }}
+          disabled={isCurrentCardLoading}
+          className="bg-slate-700 hover:bg-slate-600 text-gray-300 hover:text-white border border-slate-600 rounded-lg flex items-center justify-center transition-all disabled:opacity-50"
+          title="Generate Outreach Email"
+        >
+          <Mail className="h-4 w-4" />
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onRecordAssessment?.(candidate); }}
+          disabled={isCurrentCardLoading || !onRecordAssessment}
+          className="bg-slate-700 hover:bg-slate-600 text-gray-300 hover:text-white border border-slate-600 rounded-lg flex items-center justify-center transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Record assessment result (creates a reviewable proposal)"
+        >
+          <Award className="h-4 w-4" />
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onOpenCandidate360?.(candidate); }}
+          className="bg-slate-700 hover:bg-slate-600 text-gray-300 hover:text-white border border-slate-600 rounded-lg flex items-center justify-center transition-all"
+          title="Open Candidate 360"
+        >
+          <ExternalLink className="h-4 w-4" />
+        </button>
+      </div>
+    </div >
+  );
+};
+
+
+const CandidatePane: React.FC<CandidatePaneProps> = ({ job, onInitiateAnalysis, onFeedback, onAddToPipeline, onBatchAnalysis, onViewProfile, isLoading, loadingCandidateId, isBatchAnalyzing }) => {
+  const navigate = useNavigate();
+  const { internalCandidates, pastCandidates, uploadedCandidates } = useData();
+  const drawerContext = useCandidateJobDrawer();
+  const [activeSource, setActiveSource] = useState<CandidateSource>('all');
+  const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
+  const [drawerTab, setDrawerTab] = useState<'summary' | 'pipeline'>('summary');
+  const [showFilters, setShowFilters] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [assessmentOpen, setAssessmentOpen] = useState(false);
+  const [assessmentCandidate, setAssessmentCandidate] = useState<Candidate | null>(null);
+
+  useEffect(() => {
+    setSelectedCandidate(null);
+    setDrawerTab('summary');
+    setActionsOpen(false);
+  }, [job?.id]);
+
+  // Filter states
+  const [experienceFilter, setExperienceFilter] = useState<'junior' | 'mid' | 'senior' | null>(null);
+  const [locationFilter, setLocationFilter] = useState<string>('');
+  const [skillsFilter, setSkillsFilter] = useState<string[]>([]);
+
+  const [shortlistAnalysisByCandidateId, setShortlistAnalysisByCandidateId] = useState<Record<string, { matchScore: number; matchRationale: string; semanticScore: number }>>({});
+  const [evidencePackByCandidateId, setEvidencePackByCandidateId] = useState<Record<string, EvidencePack>>({});
+  const [roleContextPack, setRoleContextPack] = useState<RoleContextPack | null>(null);
+  const [isShortlistAnalyzing, setIsShortlistAnalyzing] = useState(false);
+  const [shortlistProgress, setShortlistProgress] = useState({ current: 0, total: 0 });
+  const [shortlistError, setShortlistError] = useState<string | null>(null);
+
+  const shortlistStorageKey = useMemo(() => (job ? `shortlist_ai_${job.id}` : null), [job]);
+
+  useEffect(() => {
+    if (!job) return;
+    let cancelled = false;
+    jobContextPackService.get(job.id).then((pack) => {
+      if (!cancelled) setRoleContextPack(pack);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [job?.id]);
+
+  // Rehydrate shortlist AI results when returning to this page/job.
+  useEffect(() => {
+    if (!shortlistStorageKey) return;
+    try {
+      const raw = localStorage.getItem(shortlistStorageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      const data = parsed?.data as Record<string, { matchScore: number; matchRationale: string; semanticScore: number; analyzedAt?: string }> | undefined;
+      if (!data) return;
+
+      // Prune very old entries (7 days) to avoid unbounded growth.
+      const now = Date.now();
+      const maxAgeMs = 7 * 24 * 60 * 60 * 1000;
+      const cleaned: Record<string, { matchScore: number; matchRationale: string; semanticScore: number }> = {};
+      Object.entries(data).forEach(([candidateId, value]) => {
+        const analyzedAt = value?.analyzedAt ? Date.parse(value.analyzedAt) : now;
+        if (!Number.isFinite(analyzedAt) || now - analyzedAt <= maxAgeMs) {
+          cleaned[candidateId] = {
+            matchScore: value.matchScore,
+            matchRationale: value.matchRationale,
+            semanticScore: value.semanticScore
+          };
+        }
+      });
+
+      setShortlistAnalysisByCandidateId(cleaned);
+    } catch (e) {
+      console.warn('[CandidatePane] Failed to rehydrate shortlist analysis:', e);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shortlistStorageKey]);
+
+  // Hydrate shortlist results from LocalWorkspace "system of truth" (decision_artifacts).
+  // This keeps results consistent across devices/sessions when analysis was persisted.
+  useEffect(() => {
+    if (!job) return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const artifacts = await decisionArtifactService.listArtifactsForJob({
+          jobId: job.id,
+          decisionType: 'shortlist_analysis',
+          limit: 500
+        });
+
+        if (cancelled || artifacts.length === 0) return;
+
+        // Already ordered by created_at DESC; keep latest per candidate.
+        const latestByCandidateId = new Map<string, (typeof artifacts)[number]>();
+        for (const artifact of artifacts) {
+          if (!latestByCandidateId.has(artifact.candidateId)) {
+            latestByCandidateId.set(artifact.candidateId, artifact);
+          }
+        }
+
+        setShortlistAnalysisByCandidateId((prev) => {
+          const next = { ...prev };
+
+          for (const [candidateId, artifact] of latestByCandidateId.entries()) {
+            const rawSemantic = artifact.details?.semanticScore;
+            const semanticScore = Number(rawSemantic);
+
+            next[candidateId] = {
+              matchScore: typeof artifact.score === 'number' ? artifact.score : (next[candidateId]?.matchScore ?? 0),
+              matchRationale: artifact.summary ?? (next[candidateId]?.matchRationale ?? ''),
+              semanticScore: Number.isFinite(semanticScore) ? semanticScore : (next[candidateId]?.semanticScore ?? 0)
+            };
+          }
+
+          return next;
+        });
+
+        setEvidencePackByCandidateId((prev) => {
+          const next = { ...prev };
+          for (const [candidateId, artifact] of latestByCandidateId.entries()) {
+            const maybePack = artifact.details?.evidencePack;
+            if (maybePack && typeof maybePack === 'object') {
+              next[candidateId] = maybePack as EvidencePack;
+            }
+          }
+          return next;
+        });
+      } catch (e) {
+        if (import.meta.env.DEV) console.warn('[CandidatePane] Failed to hydrate shortlist artifacts:', e);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [job?.id]);
+
+  // Persist shortlist AI results so navigation doesn't lose them.
+  useEffect(() => {
+    if (!shortlistStorageKey) return;
+    try {
+      const payload: Record<string, { matchScore: number; matchRationale: string; semanticScore: number; analyzedAt: string }> = {};
+      Object.entries(shortlistAnalysisByCandidateId).forEach(([candidateId, value]) => {
+        if (value) {
+          payload[candidateId] = { ...value, analyzedAt: new Date().toISOString() };
+        }
+      });
+      localStorage.setItem(shortlistStorageKey, JSON.stringify({ data: payload, updatedAt: Date.now() }));
+    } catch (e) {
+      // non-fatal (private mode / quota)
+      console.warn('[CandidatePane] Failed to persist shortlist analysis:', e);
+    }
+  }, [shortlistStorageKey, shortlistAnalysisByCandidateId]);
+
+  // Fetch candidates from LocalWorkspace for Best Matches tab
+  const {
+    candidates: localStoreCandidates,
+    isLoading: isLoadingLocalWorkspace,
+    hasMore,
+    loadMore,
+    refresh,
+    total: localStoreTotal
+  } = useLocalWorkspaceCandidates(job, {
+    enabled: activeSource === 'all' || activeSource === 'localStore',
+    limit: 50,
+    threshold: 0.3,
+    experienceLevel: experienceFilter,
+    location: locationFilter || null,
+    requiredSkills: skillsFilter.length > 0 ? skillsFilter : null
+  });
+
+  // Transform LocalWorkspace candidates to Candidate type
+  const transformedLocalWorkspaceCandidates = useMemo(() => {
+    if (!job) return [];
+
+    return localStoreCandidates.map(sc => ({
+      id: sc.id,
+      name: sc.name,
+      email: sc.email,
+      type: 'uploaded' as const,
+      skills: sc.skills,
+      fileName: buildCandidateSubtitle(sc),
+      matchScores: {
+        [job.id]: shortlistAnalysisByCandidateId[sc.id]?.matchScore ?? sc.matchScore
+      },
+      matchRationales: {
+        [job.id]: shortlistAnalysisByCandidateId[sc.id]
+          ? `AI Score: ${shortlistAnalysisByCandidateId[sc.id].matchScore}/100 (semantic: ${shortlistAnalysisByCandidateId[sc.id].semanticScore}%) — ${shortlistAnalysisByCandidateId[sc.id].matchRationale}`
+          : (sc.matchReason || `${sc.matchScore}% semantic match`)
+      },
+      feedback: {},
+      isHiddenGem: sc.matchScore > 70 && sc.matchScore < 80,
+      location: sc.location,
+      ...sc.metadata
+    } as Candidate));
+  }, [localStoreCandidates, job, shortlistAnalysisByCandidateId]);
+
+  const allSortedCandidates = useMemo(() => {
+    if (!job) return [];
+    const allCandidates = [...internalCandidates, ...pastCandidates, ...uploadedCandidates];
+    return allCandidates.sort((a, b) => (b.matchScores?.[job.id] || 0) - (a.matchScores?.[job.id] || 0));
+  }, [job, internalCandidates, pastCandidates, uploadedCandidates]);
+
+  const sortedCandidates = useMemo(() => {
+    if (!job) return [];
+
+    if (activeSource === 'all' || activeSource === 'localStore') {
+      if (transformedLocalWorkspaceCandidates.length > 0) return transformedLocalWorkspaceCandidates;
+      return [...internalCandidates].sort((a, b) => (b.matchScores?.[job.id] || 0) - (a.matchScores?.[job.id] || 0));
+    }
+
+    if (activeSource === 'internal') {
+      return [...internalCandidates].sort((a, b) => (b.matchScores?.[job.id] || 0) - (a.matchScores?.[job.id] || 0));
+    }
+
+    if (activeSource === 'past') {
+      return [...pastCandidates].sort((a, b) => (b.matchScores?.[job.id] || 0) - (a.matchScores?.[job.id] || 0));
+    }
+
+    return [...uploadedCandidates].sort((a, b) => (b.matchScores?.[job.id] || 0) - (a.matchScores?.[job.id] || 0));
+  }, [job, activeSource, internalCandidates, pastCandidates, uploadedCandidates, transformedLocalWorkspaceCandidates]);
+
+  const handleBatchAnalyze = () => {
+    const topCandidates = allSortedCandidates.slice(0, 10);
+    if (onBatchAnalysis && topCandidates.length > 0) {
+      onBatchAnalysis(topCandidates);
+    }
+  };
+
+  const handleFindMatches = useCallback(() => {
+    setShortlistError(null);
+    setActiveSource('localStore');
+    refresh();
+  }, [refresh]);
+
+  const handleAnalyzeShortlist = useCallback(async () => {
+    if (!job) return;
+
+    const shortlistLimit = Math.min(10, transformedLocalWorkspaceCandidates.length);
+    if (shortlistLimit === 0) return;
+
+    setShortlistError(null);
+    setIsShortlistAnalyzing(true);
+    setShortlistProgress({ current: 0, total: shortlistLimit });
+
+    for (let i = 0; i < shortlistLimit; i++) {
+      const candidate = transformedLocalWorkspaceCandidates[i];
+      setShortlistProgress({ current: i + 1, total: shortlistLimit });
+
+      try {
+        const semanticScore = localStoreCandidates.find(sc => sc.id === candidate.id)?.matchScore ?? candidate.matchScores?.[job.id] ?? 0;
+        const fit = await fitAnalysisService.analyze(job, candidate, semanticScore);
+        const matchScore = fit.score;
+        const matchRationale = fit.rationale;
+
+        const decision = fitAnalysisService.decisionFromScore(matchScore) as DecisionValue;
+        const externalId = fitAnalysisService.getExternalIdForJob(job, 'ui');
+
+        const evidencePack = await evidencePackService.build({
+          job: toJobSnapshot(job),
+          candidate: toCandidateSnapshot(candidate),
+          contextPack: roleContextPack
+        });
+
+        void decisionArtifactService.saveShortlistAnalysis({
+          candidateId: String(candidate.id),
+          candidateName: candidate.name,
+          jobId: job.id,
+          jobTitle: job.title,
+          score: matchScore,
+          decision,
+          summary: matchRationale,
+          details: {
+            semanticScore,
+            method: fit.method,
+            confidence: fit.confidence,
+            reasons: fit.reasons ?? [],
+            evidencePack
+          },
+          externalId
+        });
+
+        void pipelineEventService.logEvent({
+          candidateId: String(candidate.id),
+          candidateName: candidate.name,
+          jobId: job.id,
+          jobTitle: job.title,
+          eventType: 'SHORTLIST_ANALYZED',
+          actorType: 'user',
+          actorId: 'ui',
+          summary: `Shortlist analyzed (${matchScore}/100, ${decision}).`,
+          metadata: { matchScore, semanticScore, decision, method: fit.method }
+        });
+
+        setShortlistAnalysisByCandidateId(prev => ({
+          ...prev,
+          [candidate.id]: { matchScore, matchRationale, semanticScore }
+        }));
+        setEvidencePackByCandidateId((prev) => ({ ...prev, [candidate.id]: evidencePack }));
+      } catch (e) {
+        console.error('[CandidatePane] Shortlist analysis failed:', e);
+        const message = e instanceof Error ? e.message : 'Shortlist analysis failed.';
+        setShortlistError(message);
+        break;
+      }
+
+      // Light throttling to reduce rate-limit risk
+      await new Promise(resolve => setTimeout(resolve, TIMING.SHORTLIST_ANALYSIS_THROTTLE_DELAY_MS));
+    }
+
+    setIsShortlistAnalyzing(false);
+    setShortlistProgress({ current: 0, total: 0 });
+  }, [job, transformedLocalWorkspaceCandidates, localStoreCandidates, roleContextPack]);
+
+  if (!job) {
+    return (
+      <div className="flex justify-center items-center h-full bg-slate-800 shadow-xl rounded-xl p-6">
+        <p className="text-xl text-gray-400 flex items-center"><Briefcase className="mr-3" /> Select a job to see potential matches.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-slate-800 shadow-xl rounded-xl p-1 h-full flex flex-col relative">
+      <div className="px-4 sm:px-6 pt-4 flex flex-col h-full">
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 pb-3 border-b border-slate-700">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm text-slate-300">
+              <span className="font-semibold text-white">Matches</span>
+              <span className="text-slate-500"> → </span>
+              <span className="text-slate-400">{job.title}</span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowFilters((v) => !v)}
+              className={`md:hidden p-2 rounded-lg border ${showFilters ? 'border-sky-500/40 bg-sky-500/10 text-sky-200' : 'border-slate-700 bg-slate-900/30 text-slate-200 hover:bg-slate-900/60'}`}
+              title="Filters"
+            >
+              <Filter className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleFindMatches}
+              disabled={isLoadingLocalWorkspace || !job}
+              className="flex-1 md:flex-none bg-gradient-to-r from-sky-600 to-sky-700 hover:from-sky-500 hover:to-sky-600 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isLoadingLocalWorkspace ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Finding...
+                </>
+              ) : (
+                <>
+                  <Search className="h-4 w-4 mr-2" />
+                  Find Matches
+                </>
+              )}
+            </button>
+
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setActionsOpen((v) => !v)}
+                className={`p-2 rounded-lg border ${actionsOpen ? 'border-sky-500/40 bg-sky-500/10 text-sky-200' : 'border-slate-700 bg-slate-900/30 text-slate-200 hover:bg-slate-900/60'}`}
+                title="More actions"
+              >
+                <ChevronDown className={`h-4 w-4 transition-transform ${actionsOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {actionsOpen && (
+                <div className="absolute right-0 mt-2 w-56 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-20 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActionsOpen(false);
+                      handleAnalyzeShortlist();
+                    }}
+                    disabled={isShortlistAnalyzing || isLoadingLocalWorkspace || transformedLocalWorkspaceCandidates.length === 0}
+                    className="w-full text-left px-4 py-3 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    <Zap className="h-4 w-4 text-pink-300" />
+                    {isShortlistAnalyzing ? `Analyzing (${shortlistProgress.current}/${shortlistProgress.total})` : 'Analyze Shortlist (AI)'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActionsOpen(false);
+                      handleBatchAnalyze();
+                    }}
+                    disabled={!onBatchAnalysis || allSortedCandidates.length === 0}
+                    className="w-full text-left px-4 py-3 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    <Trophy className="h-4 w-4 text-yellow-300" />
+                    Batch Analyze Top 10
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowFilters((v) => !v)}
+              className={`hidden md:inline-flex p-2 rounded-lg border ${showFilters ? 'border-sky-500/40 bg-sky-500/10 text-sky-200' : 'border-slate-700 bg-slate-900/30 text-slate-200 hover:bg-slate-900/60'}`}
+              title="Filters"
+            >
+              <Filter className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Source chips */}
+        <div className="mt-3 flex flex-wrap gap-2 items-center">
+          <SourceChip
+            label="All"
+            count={localStoreTotal || (internalCandidates.length + pastCandidates.length + uploadedCandidates.length)}
+            isActive={activeSource === 'all'}
+            onClick={() => setActiveSource('all')}
+          />
+          <SourceChip
+            label="Local workspace"
+            count={localStoreTotal}
+            isActive={activeSource === 'localStore'}
+            onClick={() => setActiveSource('localStore')}
+          />
+          <SourceChip
+            label="Internal"
+            count={internalCandidates.length}
+            isActive={activeSource === 'internal'}
+            onClick={() => setActiveSource('internal')}
+          />
+          <SourceChip
+            label="Applicants"
+            count={pastCandidates.length}
+            isActive={activeSource === 'past'}
+            onClick={() => setActiveSource('past')}
+          />
+          <SourceChip
+            label="Uploaded"
+            count={uploadedCandidates.length}
+            isActive={activeSource === 'uploaded'}
+            onClick={() => setActiveSource('uploaded')}
+          />
+
+          <div className="ml-auto text-xs text-slate-400">
+            {(activeSource === 'all' || activeSource === 'localStore') ? 'Semantic search results' : 'Local dataset'}
+          </div>
+        </div>
+
+        {shortlistError && (
+          <div className="mt-3 p-3 bg-red-900/20 border border-red-500/30 rounded-lg text-sm text-red-200">
+            {shortlistError}
+          </div>
+        )}
+
+        {/* Filters panel */}
+        {showFilters && (
+          <div className="mt-3 p-3 bg-slate-900/50 border border-slate-700 rounded-lg">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold text-slate-400 uppercase mr-1">Filters</span>
+	              <select
+	                value={experienceFilter || ''}
+	                onChange={(e) => {
+	                  const value = e.target.value;
+	                  setExperienceFilter(value === 'junior' || value === 'mid' || value === 'senior' ? value : null);
+	                }}
+	                className="px-3 py-1 bg-slate-800 border border-slate-600 rounded text-xs text-slate-300 focus:outline-none focus:ring-2 focus:ring-sky-500"
+	              >
+                <option value="">All Levels</option>
+                <option value="junior">Junior (0-3 yrs)</option>
+                <option value="mid">Mid (3-7 yrs)</option>
+                <option value="senior">Senior (7+ yrs)</option>
+              </select>
+
+              <input
+                type="text"
+                placeholder="Location..."
+                value={locationFilter}
+                onChange={(e) => setLocationFilter(e.target.value)}
+                className="px-3 py-1 bg-slate-800 border border-slate-600 rounded text-xs text-slate-300 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 w-40"
+              />
+
+              {(experienceFilter || locationFilter) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExperienceFilter(null);
+                    setLocationFilter('');
+                    setSkillsFilter([]);
+                  }}
+                  className="px-2 py-1 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 rounded text-xs text-red-400 flex items-center space-x-1"
+                >
+                  <X className="h-3 w-3" />
+                  <span>Clear</span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Content */}
+        <div className="flex-grow min-h-0 flex gap-4 pt-4">
+          <div className="flex-grow overflow-y-auto custom-scrollbar pr-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {sortedCandidates.length > 0 ? (
+                sortedCandidates.map(candidate => (
+                  <CandidateCard
+                    key={candidate.id}
+                    candidate={candidate}
+                    job={job}
+                    evidencePack={evidencePackByCandidateId[candidate.id]}
+                    onSelect={(c) => {
+                      if (drawerContext) {
+                        drawerContext.openCandidateJobDrawer(c, job);
+                        return;
+                      }
+                      setSelectedCandidate(c);
+                      setDrawerTab('summary');
+                    }}
+                    onInitiateAnalysis={onInitiateAnalysis}
+                    onFeedback={onFeedback}
+                    onAddToPipeline={onAddToPipeline}
+                    onViewProfile={onViewProfile}
+                    onOpenCandidate360={(candidate) => navigate(`/candidates/${candidate.id}`, { state: { candidate } })}
+                    onRecordAssessment={(c) => {
+                      setAssessmentCandidate(c);
+                      setAssessmentOpen(true);
+                    }}
+                    isLoading={isLoading}
+                    loadingCandidateId={loadingCandidateId}
+                  />
+                ))
+              ) : (
+                <p className="text-center text-gray-400 py-8 col-span-full">
+                  {isLoadingLocalWorkspace ? 'Loading candidates...' : 'No candidates to show.'}
+                </p>
+              )}
+            </div>
+
+            {(activeSource === 'all' || activeSource === 'localStore') && hasMore && !isLoadingLocalWorkspace && (
+              <div className="flex justify-center mt-6 mb-4">
+                <button
+                  onClick={loadMore}
+                  className="px-6 py-3 bg-gradient-to-r from-sky-600 to-purple-600 hover:from-sky-500 hover:to-purple-500 text-white font-semibold rounded-lg flex items-center space-x-2 transition-all shadow-lg"
+                >
+                  <RefreshCw className="h-5 w-5" />
+                  <span>Load More</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Side drawer (desktop) */}
+          {selectedCandidate && (
+            <div className="hidden lg:flex w-[420px] flex-shrink-0 bg-slate-900/40 border border-slate-700 rounded-xl overflow-hidden">
+              <div className="w-full flex flex-col">
+                <div className="p-4 border-b border-slate-700 flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-lg font-bold text-white truncate">{selectedCandidate.name}</div>
+                    <div className="text-xs text-slate-400 truncate">{selectedCandidate.role || selectedCandidate.type}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCandidate(null)}
+                    className="p-2 rounded-lg border border-slate-700 bg-slate-900/30 text-slate-200 hover:bg-slate-900/60"
+                    title="Close"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="px-4 pt-3 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDrawerTab('summary')}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${drawerTab === 'summary' ? 'bg-sky-500/15 text-sky-300 border-sky-500/30' : 'bg-slate-900/30 text-slate-300 border-slate-700 hover:text-white'}`}
+                  >
+                    Summary
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDrawerTab('pipeline')}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${drawerTab === 'pipeline' ? 'bg-sky-500/15 text-sky-300 border-sky-500/30' : 'bg-slate-900/30 text-slate-300 border-slate-700 hover:text-white'}`}
+                  >
+                    Pipeline
+                  </button>
+                </div>
+
+                <div className="p-4 overflow-y-auto custom-scrollbar">
+                  {drawerTab === 'summary' ? (
+                    <div className="space-y-4">
+                      <div className="bg-slate-800/60 border border-slate-700 rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-xs font-semibold text-slate-400 uppercase">Match</div>
+                          <div className="text-lg font-bold text-white">
+                            {typeof selectedCandidate.matchScores?.[job.id] === 'number' ? `${selectedCandidate.matchScores?.[job.id]}%` : '—'}
+                          </div>
+                        </div>
+                        <div className="text-sm text-slate-200 leading-relaxed">
+                          {selectedCandidate.matchRationales?.[job.id] ?? 'No match rationale available.'}
+                        </div>
+                      </div>
+
+                      <div className="bg-slate-800/60 border border-slate-700 rounded-lg p-4">
+                        <div className="text-xs font-semibold text-slate-400 uppercase mb-2">Skills</div>
+                        <div className="flex flex-wrap gap-2">
+                          {(selectedCandidate.skills ?? []).slice(0, 12).map((s) => (
+                            <span key={s} className="text-xs bg-slate-900/40 border border-slate-700 text-slate-200 px-2 py-1 rounded-full">
+                              {s}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => onInitiateAnalysis('FIT_ANALYSIS', selectedCandidate)}
+                        className="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sky-200 font-semibold py-2.5 px-4 rounded-lg flex items-center justify-center gap-2"
+                      >
+                        <TrendingUp className="h-4 w-4" />
+                        Run Detailed Analysis
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => onViewProfile?.(selectedCandidate)}
+                        className="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold py-2.5 px-4 rounded-lg flex items-center justify-center gap-2"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                        Open Full Profile
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="bg-slate-800/60 border border-slate-700 rounded-lg p-4">
+                        <div className="text-xs font-semibold text-slate-400 uppercase mb-2">Status</div>
+                        <div className="text-sm text-slate-200">
+                          {String(selectedCandidate.pipelineStage?.[job.id] || 'Not in pipeline')}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => onAddToPipeline(selectedCandidate, job.id)}
+                        disabled={Boolean(selectedCandidate.pipelineStage?.[job.id])}
+                        className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-semibold py-2.5 px-4 rounded-lg flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <PlusCircle className="h-4 w-4" />
+                        Add to Pipeline
+                      </button>
+
+                      <div className="text-xs text-slate-400">
+                        Tip: use the Pipeline tab to move candidates across stages.
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <RecordAssessmentModal
+        isOpen={assessmentOpen}
+        onClose={() => {
+          setAssessmentOpen(false);
+          setAssessmentCandidate(null);
+        }}
+        candidate={assessmentCandidate}
+        job={job}
+      />
+    </div>
+  );
+};
+
+export default CandidatePane;

@@ -1,0 +1,17 @@
+import type { Result } from '../types/result';
+import { ok } from '../types/result';
+import { hybridCandidateRankingService } from './HybridCandidateRankingService';
+import { readLocalCandidates } from './LocalCandidateStore';
+
+export interface SemanticSearchResult { id: string; name: string; email?: string; type: 'internal' | 'past' | 'uploaded'; skills: string[]; similarity: number; content: string; metadata: Record<string, unknown>; hybridScore?: number; structuredScore?: number; rankingReasons?: string[] }
+export interface SearchOptions { threshold?: number; limit?: number; type?: 'internal' | 'past' | 'uploaded' }
+const tokens = (value: string) => new Set(value.toLowerCase().match(/[a-z0-9+#.]+/g) || []);
+const similarity = (query: string, value: string) => { const wanted = tokens(query); if (!wanted.size) return 0; const available = tokens(value); return Array.from(wanted).filter((token) => available.has(token)).length / wanted.size; };
+const toResult = (candidate: ReturnType<typeof readLocalCandidates>[number], query: string): SemanticSearchResult => { const metadata = candidate.metadata || {}; const content = [candidate.name, candidate.currentRole, candidate.role, candidate.title, candidate.location, candidate.skills?.join(' '), candidate.summary, candidate.notes].filter(Boolean).join(' '); const type = candidate.type === 'internal' || candidate.type === 'past' || candidate.type === 'uploaded' ? candidate.type : 'uploaded'; return { id: candidate.id, name: candidate.name, email: candidate.email, type, skills: candidate.skills || [], similarity: similarity(query, content), content, metadata: { ...metadata, role: candidate.currentRole || candidate.role || candidate.title, location: candidate.location, experienceYears: candidate.experienceYears ?? candidate.experience } }; };
+class SemanticSearchService {
+  async search(query: string, { threshold = 0, limit = 10, type }: SearchOptions = {}): Promise<Result<SemanticSearchResult[]>> { let results = readLocalCandidates().map((candidate) => toResult(candidate, query)).filter((candidate) => candidate.similarity >= threshold); if (type) results = results.filter((candidate) => candidate.type === type); const ranked = hybridCandidateRankingService.rankForQuery(query, results.map((result) => ({ ...result, semanticSimilarity: result.similarity, title: String(result.metadata.role || ''), location: String(result.metadata.location || ''), experienceYears: Number(result.metadata.experienceYears || 0) }))); return ok(ranked.slice(0, limit).map(({ reasons, ...result }) => ({ ...result, rankingReasons: reasons } as SemanticSearchResult))); }
+  async findSimilarCandidates(candidateId: string, options: SearchOptions = {}): Promise<Result<SemanticSearchResult[]>> { const reference = readLocalCandidates().find((candidate) => candidate.id === candidateId); if (!reference) return ok([]); return this.search([reference.currentRole, reference.role, reference.title, ...(reference.skills || [])].filter(Boolean).join(' '), { ...options, limit: (options.limit || 10) + 1 }).then((result) => result.success ? ok(result.data.filter((candidate) => candidate.id !== candidateId).slice(0, options.limit || 10)) : result); }
+  async getTotalCount(): Promise<Result<number>> { return ok(readLocalCandidates().length); }
+  isAvailable(): boolean { return true; }
+}
+export const semanticSearchService = new SemanticSearchService();
