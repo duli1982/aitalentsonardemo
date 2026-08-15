@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { z } from 'zod';
-import { getEnv } from './ai/_lib/env';
-import { universalHandler } from './_lib/universalHandler';
+import { getEnv } from './ai/_lib/env.js';
+import { universalHandler } from './_lib/universalHandler.js';
 
 const providers = ['google', 'outlook'] as const;
 const schema = z.object({ provider: z.enum(providers), callId: z.string().min(1), approvedBy: z.string().min(1), title: z.string().min(1).max(300), startsAt: z.string().datetime(), durationMinutes: z.number().int().min(10).max(240), attendee: z.object({ name: z.string().min(1), email: z.string().email() }), description: z.string().max(5000) });

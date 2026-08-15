@@ -1,8 +1,8 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { getEnv } from './ai/_lib/env';
-import { platformNow, updateConversationStore } from './_lib/conversationStore';
-import { universalHandler } from './_lib/universalHandler';
+import { getEnv } from './ai/_lib/env.js';
+import { platformNow, updateConversationStore } from './_lib/conversationStore.js';
+import { universalHandler } from './_lib/universalHandler.js';
 
 const reply = (res: ServerResponse, status: number, value: unknown) => { res.statusCode = status; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(value)); };
 const equal = (left: string, right: string) => { const a = Buffer.from(left); const b = Buffer.from(right); return a.length === b.length && timingSafeEqual(a, b); };

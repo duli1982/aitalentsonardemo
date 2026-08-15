@@ -1,5 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
-import { getEnv, getGeminiApiKey } from './env';
+import { getEnv, getGeminiApiKey } from './env.js';
 
 type GatewayOperation = 'generate' | 'embed';
 

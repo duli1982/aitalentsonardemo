@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { z } from 'zod';
-import { GeminiGateway, GeminiGatewayError } from './_lib/geminiGateway';
-import { universalHandler } from '../_lib/universalHandler';
+import { GeminiGateway, GeminiGatewayError } from './_lib/geminiGateway.js';
+import { universalHandler } from '../_lib/universalHandler.js';
 
 const requestSchema = z.object({
   purpose: z.enum(['candidate_search', 'job_match', 'candidate_document']),

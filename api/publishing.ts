@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { z } from 'zod';
-import { getEnv } from './ai/_lib/env';
-import { universalHandler } from './_lib/universalHandler';
+import { getEnv } from './ai/_lib/env.js';
+import { universalHandler } from './_lib/universalHandler.js';
 
 const providers = ['greenhouse', 'lever', 'facebook'] as const;
 type Provider = typeof providers[number];

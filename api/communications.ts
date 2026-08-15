@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { z } from 'zod';
-import { getEnv } from './ai/_lib/env';
-import { universalHandler } from './_lib/universalHandler';
+import { getEnv } from './ai/_lib/env.js';
+import { universalHandler } from './_lib/universalHandler.js';
 
 const providers = ['twilio', 'meta_whatsapp'] as const;
 const schema = z.object({ provider: z.enum(providers), organizationId: z.string().min(1).max(200), sessionId: z.string().min(1).max(200), candidateId: z.string().min(1).max(200), to: z.string().min(7).max(40), body: z.string().min(1).max(4000), consentConfirmed: z.literal(true), approvedBy: z.string().min(1).max(200) });

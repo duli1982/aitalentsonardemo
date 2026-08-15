@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { describe, expect, it } from 'vitest';
-import { universalHandler } from '../_lib/universalHandler';
+import { universalHandler } from '../_lib/universalHandler.js';
 
 describe('universalHandler', () => {
   it('adapts Vercel Web Requests to existing Node-style handlers', async () => {

@@ -1,8 +1,8 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { z } from 'zod';
-import { getEnv } from './ai/_lib/env';
-import { platformId, platformNow, readConversationStore, updateConversationStore, type LanguageAssessment, type LanguageCode } from './_lib/conversationStore';
-import { universalHandler } from './_lib/universalHandler';
+import { getEnv } from './ai/_lib/env.js';
+import { platformId, platformNow, readConversationStore, updateConversationStore, type LanguageAssessment, type LanguageCode } from './_lib/conversationStore.js';
+import { universalHandler } from './_lib/universalHandler.js';
 
 const languages: Record<LanguageCode, string> = { en: 'English', de: 'German', fr: 'French', es: 'Spanish', it: 'Italian', he: 'Hebrew', hu: 'Hungarian', pl: 'Polish', cs: 'Czech', sk: 'Slovak' };
 const languageCodes = Object.keys(languages) as [LanguageCode, ...LanguageCode[]];

@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { z } from 'zod';
-import { GeminiGateway, GeminiGatewayError } from './_lib/geminiGateway';
-import { universalHandler } from '../_lib/universalHandler';
+import { GeminiGateway, GeminiGatewayError } from './_lib/geminiGateway.js';
+import { universalHandler } from '../_lib/universalHandler.js';
 
 const MAX_BODY_BYTES = 12 * 1024 * 1024;
 const supported = new Set(['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/markdown', 'application/octet-stream']);
