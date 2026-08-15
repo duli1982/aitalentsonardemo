@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { z } from 'zod';
 import { getEnv } from './ai/_lib/env';
+import { universalHandler } from './_lib/universalHandler';
 
 const providers = ['google', 'outlook'] as const;
 const schema = z.object({ provider: z.enum(providers), callId: z.string().min(1), approvedBy: z.string().min(1), title: z.string().min(1).max(300), startsAt: z.string().datetime(), durationMinutes: z.number().int().min(10).max(240), attendee: z.object({ name: z.string().min(1), email: z.string().email() }), description: z.string().max(5000) });
@@ -8,7 +9,7 @@ const send = (res: ServerResponse, status: number, body: Record<string, unknown>
 async function json(req: IncomingMessage) { const chunks: Buffer[] = []; for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)); return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); }
 const config = () => ({ google: Boolean(getEnv('GOOGLE_CALENDAR_ACCESS_TOKEN')), outlook: Boolean(getEnv('OUTLOOK_CALENDAR_ACCESS_TOKEN')) });
 
-export default async function handler(req: IncomingMessage, res: ServerResponse) {
+async function handler(req: IncomingMessage, res: ServerResponse) {
   if (req.method === 'GET') return send(res, 200, { ok: true, providers: config() });
   if (req.method !== 'POST') return send(res, 405, { ok: false, message: 'GET or POST only.' });
   try {
@@ -26,3 +27,5 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return send(res, 200, { ok: true, provider: data.provider, externalId: result.id, joinUrl: (result.onlineMeeting as { joinUrl?: string })?.joinUrl ?? result.webLink, scheduledAt: new Date().toISOString() });
   } catch (error) { return send(res, 500, { ok: false, errorCode: 'CALENDAR_FAILED', message: error instanceof Error ? error.message : 'Calendar request failed.' }); }
 }
+
+export default universalHandler(handler);

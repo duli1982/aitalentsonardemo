@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { z } from 'zod';
 import { GeminiGateway, GeminiGatewayError } from './_lib/geminiGateway';
+import { universalHandler } from '../_lib/universalHandler';
 
 const MAX_BODY_BYTES = 12 * 1024 * 1024;
 const supported = new Set(['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/markdown', 'application/octet-stream']);
@@ -25,7 +26,7 @@ const responseSchema = {
   required: ['name', 'skills', 'summary', 'education', 'languages'],
 };
 
-export default async function handler(req: IncomingMessage, res: ServerResponse) {
+async function handler(req: IncomingMessage, res: ServerResponse) {
   if (req.method !== 'POST') return send(res, 405, { ok: false, errorCode: 'METHOD_NOT_ALLOWED', message: 'POST only.' });
   try {
     const parsed = requestSchema.safeParse(await readJson(req));
@@ -40,3 +41,5 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return send(res, message === 'Request body is too large.' ? 413 : 500, { ok: false, errorCode: 'UPSTREAM', message });
   }
 }
+
+export default universalHandler(handler);

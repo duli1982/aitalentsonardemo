@@ -2,13 +2,14 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { getEnv } from './ai/_lib/env';
 import { platformNow, updateConversationStore } from './_lib/conversationStore';
+import { universalHandler } from './_lib/universalHandler';
 
 const reply = (res: ServerResponse, status: number, value: unknown) => { res.statusCode = status; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(value)); };
 const equal = (left: string, right: string) => { const a = Buffer.from(left); const b = Buffer.from(right); return a.length === b.length && timingSafeEqual(a, b); };
 async function raw(req: IncomingMessage) { const chunks: Buffer[] = []; let size = 0; for await (const chunk of req) { const part = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk); size += part.length; if (size > 512 * 1024) throw new Error('Request too large.'); chunks.push(part); } return Buffer.concat(chunks); }
 const bearerValid = (req: IncomingMessage) => { const expected = getEnv('CONVERSATION_WEBHOOK_TOKEN'); const actual = String(req.headers.authorization || '').replace(/^Bearer\s+/i, ''); return Boolean(expected && actual && equal(actual, expected)); };
 
-export default async function handler(req: IncomingMessage, res: ServerResponse) {
+async function handler(req: IncomingMessage, res: ServerResponse) {
   try {
     if (req.method !== 'POST') return reply(res, 405, { ok: false, message: 'POST only.' });
     const url = new URL(req.url || '/', 'http://localhost'); const provider = url.searchParams.get('provider'); const organizationId = url.searchParams.get('organizationId') || '';
@@ -37,3 +38,5 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return reply(res, 400, { ok: false, errorCode: 'UNKNOWN_PROVIDER' });
   } catch (error) { return reply(res, error instanceof Error && error.message === 'Request too large.' ? 413 : 400, { ok: false, message: error instanceof Error ? error.message : 'Webhook failed.' }); }
 }
+
+export default universalHandler(handler);

@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { z } from 'zod';
 import { getEnv } from './ai/_lib/env';
+import { universalHandler } from './_lib/universalHandler';
 
 const providers = ['greenhouse', 'lever', 'facebook'] as const;
 type Provider = typeof providers[number];
@@ -9,7 +10,7 @@ const config = (provider: Provider) => ({ url: getEnv(`${provider.toUpperCase()}
 const send = (res: ServerResponse, status: number, body: Record<string, unknown>) => { res.statusCode = status; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(body)); };
 async function readJson(req: IncomingMessage) { const chunks: Buffer[] = []; let size = 0; for await (const chunk of req) { const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk); size += buffer.length; if (size > 64 * 1024) throw new Error('Request body is too large.'); chunks.push(buffer); } return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); }
 
-export default async function handler(req: IncomingMessage, res: ServerResponse) {
+async function handler(req: IncomingMessage, res: ServerResponse) {
   if (req.method === 'GET') return send(res, 200, { ok: true, providers: Object.fromEntries(providers.map((provider) => [provider, { configured: Boolean(config(provider).url), mode: 'server_webhook' }])) });
   if (req.method !== 'POST') return send(res, 405, { ok: false, message: 'GET or POST only.' });
   try {
@@ -24,3 +25,5 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return send(res, 200, { ok: true, provider: parsed.data.provider, externalId: upstream.headers.get('x-external-id') ?? undefined, publishedAt: new Date().toISOString() });
   } catch (error) { return send(res, error instanceof Error && error.message === 'Request body is too large.' ? 413 : 500, { ok: false, errorCode: 'PUBLISH_FAILED', message: error instanceof Error ? error.message : 'Publishing failed.' }); }
 }
+
+export default universalHandler(handler);

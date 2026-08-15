@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { z } from 'zod';
 import { careerId, careerNow, careerSlug, readCareerStore, updateCareerStore, type PublishedCareerJob } from './_lib/careerStore';
+import { universalHandler } from './_lib/universalHandler';
 
 const send = (res: ServerResponse, status: number, body: unknown) => { res.statusCode = status; res.setHeader('Content-Type', 'application/json'); res.setHeader('Cache-Control', 'no-store'); res.end(JSON.stringify(body)); };
 async function json(req: IncomingMessage) { const chunks: Buffer[] = []; let size = 0; for await (const chunk of req) { const part = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk); size += part.length; if (size > 1024 * 1024) throw new Error('Request too large.'); chunks.push(part); } return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') as Record<string, unknown>; }
@@ -8,7 +9,7 @@ const base = z.object({ action: z.string(), organizationId: z.string().min(1).ma
 const publicJob = (job: PublishedCareerJob) => ({ ...job, assignedRecruiter: undefined });
 const isLive = (job: PublishedCareerJob) => job.status === 'published' && (!job.expiresAt || Date.parse(job.expiresAt) > Date.now());
 
-export default async function handler(req: IncomingMessage, res: ServerResponse) {
+async function handler(req: IncomingMessage, res: ServerResponse) {
   try {
     const url = new URL(req.url || '/', 'http://localhost');
     if (req.method === 'GET') {
@@ -35,3 +36,5 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return send(res, 200, { ok: true, result });
   } catch (error) { const message = error instanceof Error ? error.message : 'Careers request failed.'; return send(res, message === 'Request too large.' ? 413 : /no longer accepting/.test(message) ? 410 : 400, { ok: false, message }); }
 }
+
+export default universalHandler(handler);

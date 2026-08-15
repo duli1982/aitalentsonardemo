@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { z } from 'zod';
 import { getEnv } from './ai/_lib/env';
 import { platformId, platformNow, readConversationStore, updateConversationStore, type LanguageAssessment, type LanguageCode } from './_lib/conversationStore';
+import { universalHandler } from './_lib/universalHandler';
 
 const languages: Record<LanguageCode, string> = { en: 'English', de: 'German', fr: 'French', es: 'Spanish', it: 'Italian', he: 'Hebrew', hu: 'Hungarian', pl: 'Polish', cs: 'Czech', sk: 'Slovak' };
 const languageCodes = Object.keys(languages) as [LanguageCode, ...LanguageCode[]];
@@ -9,7 +10,9 @@ const send = (res: ServerResponse, status: number, body: unknown) => { res.statu
 async function body(req: IncomingMessage) { const chunks: Buffer[] = []; let size = 0; for await (const chunk of req) { const part = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk); size += part.length; if (size > 256 * 1024) throw new Error('Request too large.'); chunks.push(part); } return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') as Record<string, unknown>; }
 const base = z.object({ action: z.string(), organizationId: z.string().min(1).max(200), actorUserId: z.string().min(1).max(200).optional() });
 const configured = () => ({
-  durableStorage: true,
+  // Vercel's /tmp directory prevents invocation failures but is ephemeral.
+  // Do not present it as durable storage in the product UI.
+  durableStorage: !process.env.VERCEL,
   assessmentProvider: Boolean(getEnv('LANGUAGE_ASSESSMENT_PROVIDER_URL') && getEnv('LANGUAGE_ASSESSMENT_PROVIDER_TOKEN')),
   twilioVoice: Boolean(getEnv('TWILIO_ACCOUNT_SID') && getEnv('TWILIO_AUTH_TOKEN') && getEnv('TWILIO_VOICE_FROM') && getEnv('TWILIO_VOICE_TWIML_URL')),
   transcription: Boolean(getEnv('TRANSCRIPTION_PROVIDER_URL') && getEnv('TRANSCRIPTION_PROVIDER_TOKEN')),
@@ -37,7 +40,7 @@ export async function runConversationWorker(organizationId: string) {
   });
 }
 
-export default async function handler(req: IncomingMessage, res: ServerResponse) {
+async function handler(req: IncomingMessage, res: ServerResponse) {
   try {
     const url = new URL(req.url || '/', 'http://localhost'); const organizationId = url.searchParams.get('organizationId') || '';
     if (req.method === 'GET') {
@@ -86,3 +89,5 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return send(res, 200, { ok: true, result });
   } catch (error) { return send(res, error instanceof Error && error.message === 'Request too large.' ? 413 : 400, { ok: false, message: error instanceof Error ? error.message : 'Conversation platform request failed.' }); }
 }
+
+export default universalHandler(handler);

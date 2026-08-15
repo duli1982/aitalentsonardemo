@@ -1,4 +1,5 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 export type PlatformChannel = 'email' | 'whatsapp' | 'phone';
@@ -39,7 +40,11 @@ export type Journey = {
 
 export type ConversationStore = { assessments: LanguageAssessment[]; phoneSessions: PhoneSession[]; navigatorItems: NavigatorItem[]; journeys: Journey[] };
 const empty = (): ConversationStore => ({ assessments: [], phoneSessions: [], navigatorItems: [], journeys: [] });
-const dataDir = path.resolve(process.cwd(), process.env.TALENT_SONAR_DATA_DIR || '.talent-sonar-data');
+const dataDir = process.env.TALENT_SONAR_DATA_DIR
+  ? path.resolve(process.env.TALENT_SONAR_DATA_DIR)
+  : process.env.VERCEL
+    ? path.join(tmpdir(), 'talent-sonar-data')
+    : path.resolve(process.cwd(), '.talent-sonar-data');
 const locks = new Map<string, Promise<unknown>>();
 const safe = (value: string) => value.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120) || 'default';
 const fileFor = (organizationId: string) => path.join(dataDir, `${safe(organizationId)}-conversation-platform.json`);

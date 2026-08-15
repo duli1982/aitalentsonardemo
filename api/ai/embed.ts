@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { z } from 'zod';
 import { GeminiGateway, GeminiGatewayError } from './_lib/geminiGateway';
+import { universalHandler } from '../_lib/universalHandler';
 
 const requestSchema = z.object({
   purpose: z.enum(['candidate_search', 'job_match', 'candidate_document']),
@@ -26,7 +27,7 @@ function send(res: ServerResponse, status: number, body: Record<string, unknown>
   res.end(JSON.stringify(body));
 }
 
-export default async function handler(req: IncomingMessage, res: ServerResponse) {
+async function handler(req: IncomingMessage, res: ServerResponse) {
   if (req.method !== 'POST') return send(res, 405, { ok: false, errorCode: 'METHOD_NOT_ALLOWED', message: 'POST only.' });
   try {
     const body = requestSchema.safeParse(await readJson(req));
@@ -40,3 +41,5 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return send(res, message === 'Request body is too large.' ? 413 : 500, { ok: false, errorCode: 'UPSTREAM', message });
   }
 }
+
+export default universalHandler(handler);

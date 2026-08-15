@@ -1,4 +1,5 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 export type PublishedCareerJob = {
@@ -16,7 +17,11 @@ export type CareerApplication = {
 export type CareerNotification = { id: string; applicationId: string; organizationId: string; recruiterUserId?: string; jobId: string; candidateId: string; title: string; detail: string; createdAt: string; acknowledgedAt?: string };
 export type CareerStore = { jobs: PublishedCareerJob[]; applications: CareerApplication[]; notifications: CareerNotification[] };
 const empty = (): CareerStore => ({ jobs: [], applications: [], notifications: [] });
-const directory = path.resolve(process.cwd(), process.env.TALENT_SONAR_DATA_DIR || '.talent-sonar-data');
+const directory = process.env.TALENT_SONAR_DATA_DIR
+  ? path.resolve(process.env.TALENT_SONAR_DATA_DIR)
+  : process.env.VERCEL
+    ? path.join(tmpdir(), 'talent-sonar-data')
+    : path.resolve(process.cwd(), '.talent-sonar-data');
 const safe = (value: string) => value.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120) || 'default';
 const fileFor = (organizationId: string) => path.join(directory, `${safe(organizationId)}-careers.json`);
 const locks = new Map<string, Promise<unknown>>();

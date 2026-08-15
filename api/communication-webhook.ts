@@ -1,13 +1,14 @@
 import { createHmac, timingSafeEqual } from 'crypto';
 import type { IncomingMessage, ServerResponse } from 'http';
 import { getEnv } from './ai/_lib/env';
+import { universalHandler } from './_lib/universalHandler';
 
 const reply = (res: ServerResponse, status: number, body: Record<string, unknown> | string) => { res.statusCode = status; if (typeof body === 'string') { res.setHeader('Content-Type', 'text/plain'); res.end(body); } else { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(body)); } };
 const safeEqual = (left: string, right: string) => { const a = Buffer.from(left); const b = Buffer.from(right); return a.length === b.length && timingSafeEqual(a, b); };
 async function raw(req: IncomingMessage) { const chunks: Buffer[] = []; let size = 0; for await (const chunk of req) { const part = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk); size += part.length; if (size > 256 * 1024) throw new Error('Request too large.'); chunks.push(part); } return Buffer.concat(chunks); }
 async function forward(event: Record<string, unknown>) { const url = getEnv('COMMUNICATION_EVENT_SINK_URL'); if (!url) return; const target = new URL(url); if (target.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(target.hostname)) throw new Error('Event sink must use HTTPS.'); await fetch(target, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(getEnv('COMMUNICATION_EVENT_SINK_TOKEN') ? { Authorization: `Bearer ${getEnv('COMMUNICATION_EVENT_SINK_TOKEN')}` } : {}) }, body: JSON.stringify(event) }); }
 
-export default async function handler(req: IncomingMessage, res: ServerResponse) {
+async function handler(req: IncomingMessage, res: ServerResponse) {
   try {
     const url = new URL(req.url ?? '/', 'http://localhost'); const provider = url.searchParams.get('provider');
     if (provider === 'meta_whatsapp' && req.method === 'GET') {
@@ -37,3 +38,5 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return reply(res, 400, { ok: false, errorCode: 'UNKNOWN_PROVIDER' });
   } catch (error) { return reply(res, error instanceof Error && error.message === 'Request too large.' ? 413 : 500, { ok: false, message: error instanceof Error ? error.message : 'Webhook failed.' }); }
 }
+
+export default universalHandler(handler);
